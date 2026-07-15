@@ -27,7 +27,8 @@ import {
   Upload,
   Layers,
   Locate,
-  ArrowLeftRight
+  ArrowLeftRight,
+  Download
 } from 'lucide-react';
 import { NguoiCoCong } from './types';
 import { MOCK_DATA, DEFAULT_PORTRAIT_URL, parseCSVToNguoiCoCong } from './data';
@@ -55,9 +56,12 @@ export default function App() {
   // UI state
   const [selectedPerson, setSelectedPerson] = useState<NguoiCoCong | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [globalSearchQuery, setGlobalSearchQuery] = useState<string>('');
+  const [showGlobalSearchResults, setShowGlobalSearchResults] = useState<boolean>(false);
   const [selectedDienChinhSach, setSelectedDienChinhSach] = useState<string>('Tất cả');
   const [selectedTinhTrang, setSelectedTinhTrang] = useState<string>('Tất cả');
   const [selectedYear, setSelectedYear] = useState<string>('');
+  const [selectedMonth, setSelectedMonth] = useState<string>('');
   const [fromDate, setFromDate] = useState<string>('');
   const [toDate, setToDate] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -425,6 +429,97 @@ export default function App() {
     setDirectionInstructions([]);
   };
 
+  // Helper to generate and download a perfectly structured and formatted Excel file template
+  const downloadExcelTemplate = () => {
+    try {
+      // Perfect column headers as expected by parseCSVToNguoiCoCong
+      const headers = [
+        'Họ tên',
+        'Năm sinh',
+        'Diện chính sách',
+        'Tình trạng',
+        'Địa chỉ',
+        'Tọa độ Lat',
+        'Tọa độ Lng',
+        'Thông tin gia đình',
+        'Tiểu sử và Thành tích',
+        'Hình ảnh',
+        'Năm dữ liệu'
+      ];
+
+      // Highly detailed, realistic Vietnamese sample rows matching the application MOCK_DATA
+      const samples = [
+        {
+          'Họ tên': 'Nguyễn Văn A',
+          'Năm sinh': '1948',
+          'Diện chính sách': 'Thương binh hạng 2/4',
+          'Tình trạng': 'Còn sống',
+          'Địa chỉ': 'Thôn 1, xã Hàm Yên, huyện Hàm Yên, tỉnh Tuyên Quang',
+          'Tọa độ Lat': 21.9863,
+          'Tọa độ Lng': 105.0863,
+          'Thông tin gia đình': 'Con trai: Nguyễn Văn Hải (SĐT: 0912.345.678) - Mối quan hệ: Con ruột',
+          'Tiểu sử và Thành tích': 'Tham gia kháng chiến chống Mỹ cứu nước, chiến đấu tại chiến trường Quảng Trị năm 1972. Được trao tặng Huân chương Kháng chiến hạng Nhì, Huân chương Chiến sĩ vẻ vang.',
+          'Hình ảnh': 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=150',
+          'Năm dữ liệu': '2026'
+        },
+        {
+          'Họ tên': 'Trần Thị B',
+          'Năm sinh': '1930',
+          'Diện chính sách': 'Bà mẹ Việt Nam Anh hùng',
+          'Tình trạng': 'Đã mất (Đã chết)',
+          'Địa chỉ': 'Thôn 3, xã Hàm Yên, huyện Hàm Yên, tỉnh Tuyên Quang',
+          'Tọa độ Lat': 21.9885,
+          'Tọa độ Lng': 105.0890,
+          'Thông tin gia đình': 'Cháu nội thờ cúng: Trần Văn Khang (SĐT: 0987.654.321) - Mối quan hệ: Cháu nội',
+          'Tiểu sử và Thành tích': 'Có chồng và hai con trai hy sinh trong kháng chiến chống Mỹ cứu nước. Được phong tặng danh hiệu cao quý "Bà mẹ Việt Nam Anh hùng" năm 1996.',
+          'Hình ảnh': 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=150',
+          'Năm dữ liệu': '2026'
+        },
+        {
+          'Họ tên': 'Phạm Văn C',
+          'Năm sinh': '1955',
+          'Diện chính sách': 'Bệnh binh',
+          'Tình trạng': 'Đang công tác',
+          'Địa chỉ': 'Thôn 2, xã Hàm Yên, huyện Hàm Yên, tỉnh Tuyên Quang',
+          'Tọa độ Lat': 21.9840,
+          'Tọa độ Lng': 105.0845,
+          'Thông tin gia đình': 'Vợ: Lê Thị Hoa (SĐT: 0905.123.456), chung sống tại địa phương',
+          'Tiểu sử và Thành tích': 'Tham gia chiến đấu bảo vệ biên giới phía Bắc năm 1979. Là cựu chiến binh tích cực tham gia các phong trào xã hội tại địa phương.',
+          'Hình ảnh': 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=150',
+          'Năm dữ liệu': '2026'
+        }
+      ];
+
+      // Convert json to sheet with explicitly defined headers
+      const ws = XLSX.utils.json_to_sheet(samples, { header: headers });
+
+      // Precise column widths (in characters) to avoid text truncating
+      ws['!cols'] = [
+        { wch: 22 }, // Họ tên
+        { wch: 10 }, // Năm sinh
+        { wch: 28 }, // Diện chính sách
+        { wch: 18 }, // Tình trạng
+        { wch: 45 }, // Địa chỉ
+        { wch: 14 }, // Tọa độ Lat
+        { wch: 14 }, // Tọa độ Lng
+        { wch: 45 }, // Thông tin gia đình
+        { wch: 65 }, // Tiểu sử và Thành tích
+        { wch: 30 }, // Hình ảnh
+        { wch: 12 }  // Năm dữ liệu
+      ];
+
+      // Create new workbook
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Mau_Danh_Sach');
+
+      // Export file
+      XLSX.writeFile(wb, 'Mau_Danh_Sach_Nguoi_Co_Cong_Ham_Yen.xlsx');
+      setSuccessMsg('Tải file Excel mẫu thành công! Bạn có thể chỉnh sửa tệp này và tải lên lại.');
+    } catch (err: any) {
+      setError(`Không thể tạo file mẫu Excel: ${err.message}`);
+    }
+  };
+
   // Sync / Load spreadsheet data
   const handleSync = async (urlToSync: string) => {
     if (!urlToSync) {
@@ -580,12 +675,25 @@ export default function App() {
   // Compute filtered items
   const filteredData = useMemo(() => {
     return (data || []).filter((item) => {
+      const activeSearch = searchQuery || globalSearchQuery;
       const matchSearch = 
-        item.hoTen.toLowerCase().includes(searchQuery.toLowerCase()) || 
-        item.diaChi.toLowerCase().includes(searchQuery.toLowerCase());
+        item.hoTen.toLowerCase().includes(activeSearch.toLowerCase()) || 
+        item.diaChi.toLowerCase().includes(activeSearch.toLowerCase());
       
       const matchDien = selectedDienChinhSach === 'Tất cả' || item.dienChinhSach === selectedDienChinhSach;
-      const matchTinhTrang = selectedTinhTrang === 'Tất cả' || item.tinhTrang === selectedTinhTrang;
+      const matchTinhTrang = (() => {
+        if (selectedTinhTrang === 'Tất cả') return true;
+        if (selectedTinhTrang === 'Còn sống') {
+          return item.tinhTrang === 'Còn sống' || item.tinhTrang === 'Đang công tác';
+        }
+        if (selectedTinhTrang === 'Đang công tác') {
+          return item.tinhTrang === 'Đang công tác';
+        }
+        if (selectedTinhTrang === 'Đã mất') {
+          return item.tinhTrang === 'Đã mất' || item.tinhTrang === 'Đã mất (Đã chết)';
+        }
+        return item.tinhTrang === selectedTinhTrang;
+      })();
       const matchTime = (() => {
         let matchesMonth = true;
         let itemDate = null;
@@ -612,8 +720,11 @@ export default function App() {
         }
 
         // Check month/year if selected
-        if (selectedYear) {
+        if (selectedYear || selectedMonth) {
             let itemYear = '';
+            let itemMonth = '';
+            
+            // Extract Year
             if (itemDate && !isNaN(itemDate.getTime())) {
                 itemYear = itemDate.getFullYear().toString();
             } else if (dStr.match(/\b(20\d{2})\b/)) {
@@ -621,16 +732,35 @@ export default function App() {
             } else if (dStr.match(/\b(\d{4})\b/)) {
                 itemYear = dStr.match(/\b(\d{4})\b/)[1];
             }
-            matchesMonth = itemYear === selectedYear;
+            
+            // Extract Month ONLY if it actually exists in the string
+            if (dStr.includes('/')) {
+                const p = dStr.split('/');
+                if (p.length >= 2) itemMonth = parseInt(p[p.length - 2]).toString().padStart(2, '0');
+            } else if (dStr.includes('-')) {
+                const p = dStr.split('-');
+                if (p.length >= 2) itemMonth = parseInt(p[1]).toString().padStart(2, '0');
+            }
+
+            if (selectedYear && itemYear !== selectedYear) matchesMonth = false;
+            if (selectedMonth && itemMonth !== selectedMonth) matchesMonth = false;
         }
 
-        // Check from/to date range
         return matchesMonth;
       })();
 
       return matchSearch && matchDien && matchTinhTrang && matchTime;
     });
-  }, [data, searchQuery, selectedDienChinhSach, selectedTinhTrang, selectedYear]);
+  }, [data, searchQuery, globalSearchQuery, selectedDienChinhSach, selectedTinhTrang, selectedYear, selectedMonth]);
+
+  // Global Search Results
+  const globalSearchResults = useMemo(() => {
+    if (!globalSearchQuery.trim() || !data) return [];
+    return data.filter(item => 
+      item.hoTen.toLowerCase().includes(globalSearchQuery.toLowerCase()) || 
+      item.diaChi.toLowerCase().includes(globalSearchQuery.toLowerCase())
+    ).slice(0, 10); // Limit to 10 results
+  }, [data, globalSearchQuery]);
 
   // Dashboard Statistics
   const stats = useMemo(() => {
@@ -784,12 +914,25 @@ export default function App() {
     if (mapRef.current) {
       mapRef.current.setView([person.lat, person.lng], 16);
       
-      const marker = markerMapRef.current.get(person.id);
-      if (marker) {
-        setTimeout(() => {
+      // Delay so marker map can update if filteredData changed
+      setTimeout(() => {
+        const marker = markerMapRef.current.get(person.id);
+        if (marker) {
           marker.openPopup();
-        }, 150);
-      }
+          
+          // Add a strong visual highlight to the marker element
+          const el = marker.getElement();
+          if (el) {
+            const innerDiv = el.querySelector('div');
+            if (innerDiv) {
+              innerDiv.classList.add('ring-8', 'ring-amber-400', 'animate-bounce', '!bg-amber-400', 'shadow-[0_0_20px_rgba(251,191,36,0.8)]', 'z-[1000]');
+              setTimeout(() => {
+                innerDiv.classList.remove('ring-8', 'ring-amber-400', 'animate-bounce', '!bg-amber-400', 'shadow-[0_0_20px_rgba(251,191,36,0.8)]', 'z-[1000]');
+              }, 3000);
+            }
+          }
+        }
+      }, 300);
     }
 
     // Auto-close mobile drawer
@@ -807,17 +950,111 @@ export default function App() {
           
           {/* Logo & Title */}
           <div className="flex items-center gap-3">
-            <div className="bg-amber-400 text-red-950 rounded-full w-10 h-10 flex items-center justify-center font-bold text-lg shadow-inner shadow-red-900/60 border-2 border-yellow-300 animate-pulse shrink-0">
-              ★
+            <div className="relative w-11 h-11 flex items-center justify-center shrink-0">
+              <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-md">
+                {/* Red Circular Shield Base */}
+                <circle cx="50" cy="50" r="45" fill="#B91C1C" stroke="#D4AF37" strokeWidth="3" />
+                {/* Inner Gold Ring */}
+                <circle cx="50" cy="50" r="37" fill="#991B1B" stroke="#FBBF24" strokeWidth="1" strokeDasharray="4,2" />
+                {/* Laurel Leaves left and right */}
+                <path d="M 22,50 C 22,65 35,78 50,78 C 65,78 78,65 78,50" fill="none" stroke="#FBBF24" strokeWidth="2.5" strokeLinecap="round" />
+                <path d="M 22,50 L 20,48 M 26,58 L 23,55 M 32,66 L 29,62 M 41,73 L 38,69 M 50,75 L 50,71 M 59,73 L 62,69 M 68,66 L 71,62 M 74,58 L 77,55 M 78,50 L 80,48" stroke="#FBBF24" strokeWidth="2" strokeLinecap="round" />
+                {/* Yellow Gold Star in Center */}
+                <polygon 
+                  points="50,22 58,38 76,41 63,54 66,72 50,64 34,72 37,54 24,41 42,38" 
+                  fill="url(#logoGoldGradient)" 
+                  stroke="#F59E0B" 
+                  strokeWidth="1" 
+                />
+                <defs>
+                  <linearGradient id="logoGoldGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stopColor="#FDE047" />
+                    <stop offset="50%" stopColor="#FBBF24" />
+                    <stop offset="100%" stopColor="#D97706" />
+                  </linearGradient>
+                </defs>
+              </svg>
             </div>
             <div>
               <h1 className="text-sm md:text-lg font-bold font-display tracking-wide uppercase text-amber-200 flex items-center gap-1.5">
-                Bản đồ thông tin người có công với cách mạng
+                Hệ thống bản đồ số người có công với cách mạng xã Hàm Yên
               </h1>
               <p className="text-[10px] md:text-xs text-red-100 font-medium">
-                Quản lý số hóa dữ liệu địa lý • Xã Hàm Yên, tỉnh Tuyên Quang
+                Quản lý hồ sơ • Bản đồ số • Tra cứu • Hỗ trợ người có công
               </p>
             </div>
+          </div>
+
+          {/* GLOBAL SEARCH BAR ON MAP */}
+          <div className="w-full md:w-auto md:flex-1 max-w-md mx-0 md:mx-4 z-[1000] bg-transparent">
+            <div className="relative">
+              <Search className="absolute left-3 top-3 w-4 h-4 text-red-300/70" />
+              <input
+                type="text"
+                placeholder="Tìm nhanh người có công..."
+                value={globalSearchQuery}
+                onChange={(e) => {
+                  setGlobalSearchQuery(e.target.value);
+                  setSearchQuery('');
+                  setActiveSidebarTab('profiles');
+                  setShowGlobalSearchResults(true);
+                }}
+                onFocus={() => setShowGlobalSearchResults(true)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && globalSearchResults.length > 0) {
+                    handleSelectPerson(globalSearchResults[0]);
+                    setGlobalSearchQuery(globalSearchResults[0].hoTen);
+                    setSearchQuery('');
+                    setActiveSidebarTab('profiles');
+                    setShowGlobalSearchResults(false);
+                  }
+                }}
+                className="w-full pl-9 pr-8 py-2.5 bg-red-950/50 backdrop-blur-md border-red-800 text-amber-50 placeholder-red-300/70 border border-slate-200 rounded-xl text-sm shadow-lg focus:outline-none focus:ring-2 focus:ring-red-800 transition-all font-medium"
+              />
+              {globalSearchQuery && (
+                <button 
+                  onClick={() => {
+                    setGlobalSearchQuery('');
+                    setShowGlobalSearchResults(false);
+                  }}
+                  className="absolute right-3 top-3 text-slate-400 hover:text-red-200"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+            
+            {/* Search Results Dropdown */}
+            {showGlobalSearchResults && globalSearchQuery.trim() !== '' && (
+              <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden max-h-80 overflow-y-auto">
+                {globalSearchResults.length === 0 ? (
+                  <div className="p-4 text-center text-xs text-slate-500">
+                    Không tìm thấy kết quả phù hợp.
+                  </div>
+                ) : (
+                  <div className="flex flex-col">
+                    {globalSearchResults.map(person => (
+                      <button
+                        key={person.id}
+                        onClick={() => {
+                          handleSelectPerson(person);
+                          setGlobalSearchQuery(person.hoTen);
+                          setSearchQuery('');
+                          setActiveSidebarTab('profiles');
+                          setShowGlobalSearchResults(false);
+                        }}
+                        className="text-left p-3 hover:bg-red-50 border-b border-slate-50 last:border-0 transition-colors flex flex-col gap-1"
+                      >
+                        <div className="font-bold text-sm text-slate-800">{person.hoTen}</div>
+                        <div className="text-[10px] text-slate-500 flex items-center gap-1">
+                          <MapPin className="w-3 h-3" /> {person.diaChi}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Sync & Toolbar Buttons */}
@@ -834,7 +1071,7 @@ export default function App() {
               className="flex items-center gap-1 bg-[#D4AF37] hover:bg-amber-500 text-red-950 text-xs font-bold py-1.5 px-3 rounded-lg border border-yellow-300 shadow-md transition-all cursor-pointer"
             >
               <Database className="w-3.5 h-3.5" />
-              <span>Đồng bộ Sheets</span>
+              <span>Đồng bộ dữ liệu</span>
             </button>
             
             
@@ -919,26 +1156,26 @@ export default function App() {
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="col-span-2 bg-red-800 rounded-xl p-4 text-white shadow-md relative overflow-hidden">
+                  <div className="col-span-2 bg-red-800 rounded-xl p-4 text-white shadow-md relative overflow-hidden flex flex-col items-center justify-center text-center">
                     <div className="absolute right-0 top-0 bottom-0 w-24 bg-gradient-to-l from-red-900 to-transparent opacity-50" />
                     <Database className="w-6 h-6 text-red-300 mb-1" />
                     <div className="text-3xl font-display font-bold">{stats.total}</div>
                     <div className="text-xs font-medium text-red-200 uppercase tracking-wide mt-1">Tổng số hồ sơ</div>
                   </div>
                   
-                  <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3 shadow-sm">
+                  <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3 shadow-sm flex flex-col items-center justify-center text-center">
                     <div className="text-xl font-display font-bold text-emerald-700">{stats.conSong}</div>
                     <div className="text-[10px] font-bold text-emerald-600/80 uppercase tracking-wide mt-1">Còn sống</div>
                   </div>
                   
-                  <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 shadow-sm">
+                  <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 shadow-sm flex flex-col items-center justify-center text-center">
                     <div className="text-xl font-display font-bold text-amber-700">{stats.dangCongTac}</div>
                     <div className="text-[10px] font-bold text-amber-600/80 uppercase tracking-wide mt-1">Đang công tác</div>
                   </div>
                   
-                  <div className="col-span-2 bg-slate-50 border border-slate-200 rounded-xl p-3 shadow-sm flex items-center justify-between">
+                  <div className="col-span-2 bg-slate-50 border border-slate-200 rounded-xl p-3 shadow-sm flex flex-col items-center justify-center text-center space-y-1">
+                    <div className="text-lg font-display font-bold text-slate-700 leading-none">{stats.daMat}</div>
                     <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Đã mất (Đã chết)</div>
-                    <div className="text-lg font-display font-bold text-slate-700">{stats.daMat}</div>
                   </div>
                 </div>
               </div>
@@ -967,12 +1204,15 @@ export default function App() {
                       type="text"
                       placeholder="Tìm họ tên hoặc địa chỉ..."
                       value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
+                      onChange={(e) => { 
+                        setSearchQuery(e.target.value); 
+                        setGlobalSearchQuery('');
+                      }}
                       className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-800 focus:bg-white transition-all"
                     />
                     {searchQuery && (
                       <button 
-                        onClick={() => setSearchQuery('')}
+                        onClick={() => { setSearchQuery(''); }}
                         className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 text-xs"
                       >
                         Xóa
@@ -984,7 +1224,24 @@ export default function App() {
                   <div className="space-y-2">
                     <div className="grid grid-cols-2 gap-2">
                       <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Năm dữ liệu</label>
+                        <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Tháng</label>
+                        <div className="relative">
+                          <Calendar className="absolute left-2 top-2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+                          <select
+                            value={selectedMonth}
+                            onChange={(e) => setSelectedMonth(e.target.value)}
+                            className="w-full pl-7 pr-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-red-800 appearance-none"
+                          >
+                            <option value="">Tất cả</option>
+                            {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
+                              <option key={m} value={m.toString().padStart(2, '0')}>Tháng {m}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Năm</label>
                         <div className="relative">
                           <Calendar className="absolute left-2 top-2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
                           <input
@@ -996,7 +1253,8 @@ export default function App() {
                           />
                         </div>
                       </div>
-
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
                       <div className="space-y-1">
                         <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Tình trạng</label>
                         <div className="relative">
@@ -1013,10 +1271,8 @@ export default function App() {
                           </select>
                         </div>
                       </div>
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Diện chính sách</label>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Diện chính sách</label>
                       <div className="relative">
                         <Award className="absolute left-2 top-2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
                         <select
@@ -1032,8 +1288,10 @@ export default function App() {
                     </div>
                   </div>
 
+                  </div>
+
                   {/* Clear Filters Indicator */}
-                  {(selectedDienChinhSach !== 'Tất cả' || selectedTinhTrang !== 'Tất cả' || selectedYear !== '' || searchQuery) && (
+                  {(selectedDienChinhSach !== 'Tất cả' || selectedTinhTrang !== 'Tất cả' || selectedYear !== '' || selectedMonth !== '' || searchQuery) && (
                     <div className="flex justify-between items-center text-[11px] text-red-800 bg-red-50 p-1.5 rounded-md border border-red-100">
                       <span>Đang lọc: {filteredData?.length} kết quả</span>
                       <button 
@@ -1041,7 +1299,9 @@ export default function App() {
                           setSelectedDienChinhSach('Tất cả');
                           setSelectedTinhTrang('Tất cả');
                           setSelectedYear('');
+                          setSelectedMonth('');
                           setSearchQuery('');
+                          setGlobalSearchQuery('');
                         }}
                         className="font-bold underline uppercase tracking-wider text-[9px] hover:text-red-950"
                       >
@@ -1145,7 +1405,7 @@ export default function App() {
           {/* Map canvas element */}
           <div ref={mapContainerRef} className="w-full h-full z-10" />
 
-          {/* Floating toggle sidebar button for mobile */}
+                    {/* Floating toggle sidebar button for mobile */}
           <button
             onClick={() => setIsSidebarOpenOnMobile(!isSidebarOpenOnMobile)}
             className="md:hidden absolute top-4 left-4 p-3 bg-red-950 text-amber-200 rounded-full border border-[#D4AF37] shadow-xl z-20 hover:bg-red-900 transition-all cursor-pointer"
@@ -1662,6 +1922,39 @@ export default function App() {
                     </p>
                   </div>
 
+                  {/* Template download section */}
+                  <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-200/80 space-y-2.5 shadow-sm">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <FileSpreadsheet className="w-4 h-4 text-emerald-600 shrink-0" />
+                        <span className="text-xs font-bold text-slate-700">Tệp Mẫu Căn Lề & Kẻ Khung Sẵn</span>
+                      </div>
+                      <span className="text-[9px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">Chuẩn 100%</span>
+                    </div>
+                    <p className="text-[10px] text-slate-500 leading-relaxed">
+                      Để nhập liệu dễ dàng và không bị lỗi cột, hãy tải xuống tệp mẫu đã được <strong>in đậm tiêu đề</strong>, <strong>căn độ rộng tối ưu</strong> và <strong>kẻ khung bảng sẵn</strong> dưới đây:
+                    </p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={downloadExcelTemplate}
+                        className="flex items-center justify-center gap-1.5 py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold rounded-lg shadow-sm hover:shadow transition-all group"
+                      >
+                        <Download className="w-3.5 h-3.5 transition-transform group-hover:translate-y-0.5" />
+                        <span>Tải Excel Mẫu (.xlsx)</span>
+                      </button>
+                      <a
+                        href="https://docs.google.com/spreadsheets/d/1Xp9mXJ50v_2D4b-w4A1Yh-B8R92eF6-I7S56l5Ue7a0/copy"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center justify-center gap-1.5 py-2 px-3 bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold rounded-lg shadow-sm hover:shadow transition-all group"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5 transition-transform group-hover:scale-105" />
+                        <span>Dùng Google Sheets</span>
+                      </a>
+                    </div>
+                  </div>
+
                   {/* Guide prompt */}
                   <div className="bg-amber-50 rounded-lg p-3 border border-amber-100 flex gap-2.5">
                     <Info className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
@@ -1734,6 +2027,39 @@ export default function App() {
                           Hỗ trợ định dạng Excel (.xlsx, .xls) hoặc tệp văn bản (.csv)
                         </div>
                       </div>
+                    </div>
+                  </div>
+
+                  {/* Template download section */}
+                  <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-200/80 space-y-2.5 shadow-sm">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <FileSpreadsheet className="w-4 h-4 text-emerald-600 shrink-0" />
+                        <span className="text-xs font-bold text-slate-700">Tệp Mẫu Căn Lề & Kẻ Khung Sẵn</span>
+                      </div>
+                      <span className="text-[9px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">Chuẩn 100%</span>
+                    </div>
+                    <p className="text-[10px] text-slate-500 leading-relaxed">
+                      Để nhập liệu dễ dàng và không bị lỗi cột, hãy tải xuống tệp mẫu đã được <strong>in đậm tiêu đề</strong>, <strong>căn độ rộng tối ưu</strong> và <strong>kẻ khung bảng sẵn</strong> dưới đây:
+                    </p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={downloadExcelTemplate}
+                        className="flex items-center justify-center gap-1.5 py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold rounded-lg shadow-sm hover:shadow transition-all group"
+                      >
+                        <Download className="w-3.5 h-3.5 transition-transform group-hover:translate-y-0.5" />
+                        <span>Tải Excel Mẫu (.xlsx)</span>
+                      </button>
+                      <a
+                        href="https://docs.google.com/spreadsheets/d/1Xp9mXJ50v_2D4b-w4A1Yh-B8R92eF6-I7S56l5Ue7a0/copy"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center justify-center gap-1.5 py-2 px-3 bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold rounded-lg shadow-sm hover:shadow transition-all group"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5 transition-transform group-hover:scale-105" />
+                        <span>Dùng Google Sheets</span>
+                      </a>
                     </div>
                   </div>
 
