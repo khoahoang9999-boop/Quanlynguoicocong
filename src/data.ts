@@ -13,7 +13,7 @@ export const MOCK_DATA: NguoiCoCong[] = [
     thongTinGiaDinh: 'Bố: Hoàng Văn A, SĐT liên hệ: 0912.999.888, mối quan hệ: Trực tiếp',
     tieuSuThanhTich: 'Thế hệ trẻ tiêu biểu tiếp nối truyền thống cách mạng, có nhiều đóng góp xuất sắc trong việc xây dựng hệ thống bản đồ số hóa và giải pháp công nghệ quản lý an sinh xã hội tại địa phương.',
     hinhAnh: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=150',
-    namDuLieu: '2024'
+    namDuLieu: '2026'
   },
   {
     id: 'mock-1',
@@ -27,7 +27,7 @@ export const MOCK_DATA: NguoiCoCong[] = [
     thongTinGiaDinh: 'Chăm sóc bởi con trai Nguyễn Văn Hải (SĐT: 0912.345.678), mối quan hệ: Con ruột',
     tieuSuThanhTich: 'Tham gia kháng chiến chống Mỹ cứu nước, chiến đấu tại chiến trường Quảng Trị năm 1972. Được trao tặng Huân chương Kháng chiến hạng Nhì, Huân chương Chiến sĩ vẻ vang.',
     hinhAnh: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&q=80&w=150',
-    namDuLieu: '2024'
+    namDuLieu: '2026'
   },
   {
     id: 'mock-2',
@@ -41,7 +41,7 @@ export const MOCK_DATA: NguoiCoCong[] = [
     thongTinGiaDinh: 'Người thờ cúng: Cháu nội Trần Văn Khang (SĐT: 0987.654.321), mối quan hệ: Cháu nội',
     tieuSuThanhTich: 'Có chồng và hai con trai hy sinh trong kháng chiến chống Mỹ cứu nước. Được phong tặng danh hiệu cao quý "Bà mẹ Việt Nam Anh hùng" năm 1996.',
     hinhAnh: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=150',
-    namDuLieu: '2023'
+    namDuLieu: '2026'
   },
   {
     id: 'mock-3',
@@ -55,7 +55,7 @@ export const MOCK_DATA: NguoiCoCong[] = [
     thongTinGiaDinh: 'Vợ: Lê Thị Hoa (SĐT: 0905.123.456), sống cùng gia đình',
     tieuSuThanhTich: 'Tham gia bảo vệ biên giới phía Bắc năm 1979. Là thương bệnh binh giữ vững phẩm chất Bộ đội Cụ Hồ, hiện đang tích cực tham gia Hội Cựu chiến binh xã Hàm Yên.',
     hinhAnh: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=150',
-    namDuLieu: '2024'
+    namDuLieu: '2026'
   },
   {
     id: 'mock-4',
@@ -69,7 +69,7 @@ export const MOCK_DATA: NguoiCoCong[] = [
     thongTinGiaDinh: 'Con gái: Lê Thị Hồng (SĐT: 0943.555.666), mối quan hệ: Con gái',
     tieuSuThanhTich: 'Hoạt động tại chiến trường Tây Nguyên từ 1968 đến 1975, bị nhiễm chất độc hóa học Dioxin. Được trao tặng Huân chương Kháng chiến hạng Ba.',
     hinhAnh: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=150',
-    namDuLieu: '2023'
+    namDuLieu: '2026'
   },
   {
     id: 'mock-5',
@@ -83,7 +83,7 @@ export const MOCK_DATA: NguoiCoCong[] = [
     thongTinGiaDinh: 'Người thờ cúng: Hoàng Văn Bình (SĐT: 0976.222.111), mối quan hệ: Con trai',
     tieuSuThanhTich: 'Tham gia giành chính quyền trong Cách mạng tháng Tám năm 1945 và kháng chiến chống Pháp. Được tặng Huy hiệu 75 năm tuổi Đảng, Huân chương Độc lập hạng Ba.',
     hinhAnh: 'https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?auto=format&fit=crop&q=80&w=150',
-    namDuLieu: '2024'
+    namDuLieu: '2026'
   }
 ];
 
@@ -102,7 +102,7 @@ const normalizeHeader = (header: string): string => {
 
 export function parseCSVToNguoiCoCong(parsedRows: any[]): NguoiCoCong[] {
   return parsedRows
-    .map((row, idx) => {
+    .map((row, idx): NguoiCoCong | null => {
       // Find matching keys dynamically
       let hoTen = '';
       let namSinh = '';
@@ -160,6 +160,7 @@ export function parseCSVToNguoiCoCong(parsedRows: any[]): NguoiCoCong[] {
       if (!hinhAnh && values[9]) hinhAnh = String(values[9]).trim();
       if (values[10] && (!namDuLieu || namDuLieu === '')) namDuLieu = String(values[10]).trim();
 
+      if (!hoTen) return null;
       return {
         id: `csv-${idx}-${Date.now()}`,
         hoTen,
@@ -175,5 +176,5 @@ export function parseCSVToNguoiCoCong(parsedRows: any[]): NguoiCoCong[] {
         namDuLieu: namDuLieu || new Date().toISOString().split('T')[0]
       };
     })
-    .filter((item) => item.hoTen && item.lat && item.lng); // Must have at least name and valid coordinate
+    .filter((item): item is NguoiCoCong => item !== null && item.hoTen !== ""); // At least name required, coords can be 0
 }

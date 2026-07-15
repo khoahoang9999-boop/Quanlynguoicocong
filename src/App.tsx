@@ -57,7 +57,7 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedDienChinhSach, setSelectedDienChinhSach] = useState<string>('Tất cả');
   const [selectedTinhTrang, setSelectedTinhTrang] = useState<string>('Tất cả');
-  const [selectedMonthYear, setSelectedMonthYear] = useState<string>('');
+  const [selectedYear, setSelectedYear] = useState<string>('');
   const [fromDate, setFromDate] = useState<string>('');
   const [toDate, setToDate] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -72,7 +72,7 @@ export default function App() {
   const [showResetModal, setShowResetModal] = useState<boolean>(false);
   const [resetFromDate, setResetFromDate] = useState<string>('');
   const [resetToDate, setResetToDate] = useState<string>('');
-  const [resetMode, setResetMode] = useState<'all' | 'range'>('all');
+  const [resetMode, setResetMode] = useState<'all' | 'range' | 'empty'>('all');
   
   const [activeSyncTab, setActiveSyncTab] = useState<'sheets' | 'local'>('sheets');
 
@@ -99,7 +99,14 @@ export default function App() {
 
   const executeResetData = () => {
     let finalData = data;
-    if (resetMode === 'all') {
+    if (resetMode === 'empty') {
+      setData([]);
+      setSheetUrl('');
+      localStorage.removeItem('saved_sheet_url');
+      localStorage.removeItem('saved_nguoi_co_cong_data');
+      setSuccessMsg('Đã xóa toàn bộ dữ liệu.');
+      finalData = [];
+    } else if (resetMode === 'all') {
       setData(MOCK_DATA);
       setSheetUrl('');
       localStorage.removeItem('saved_sheet_url');
@@ -198,7 +205,7 @@ export default function App() {
     // Trigger initial fitBounds if we have data
     if (data?.length > 0) {
       setTimeout(() => {
-        fitAllMarkers(resetMode === "all" ? MOCK_DATA : newData);
+        fitAllMarkers(data);
       }, 500);
     }
 
@@ -528,8 +535,36 @@ export default function App() {
   // Reset to default mock data
   
   // Dynamic filter lists
+  
+  const listYears = useMemo(() => {
+    const years = new Set<string>();
+    const currentYear = new Date().getFullYear().toString();
+    years.add(currentYear); // Always include current year
+    data.forEach(item => {
+      const dStr = item.namDuLieu || '';
+      const match = dStr.match(/\b(20\d{2})\b/);
+      if (match) {
+        years.add(match[1]);
+      }
+    });
+    return Array.from(years).sort().reverse(); // Newest first
+  }, [data]);
+
   const listDienChinhSach = useMemo(() => {
-    const list = new Set<string>();
+    const list = new Set<string>([
+      'Lão thành cách mạng',
+      'Cán bộ tiền khởi nghĩa',
+      'Liệt sĩ',
+      'Bà mẹ Việt Nam anh hùng',
+      'Anh hùng Lực lượng vũ trang nhân dân',
+      'Anh hùng Lao động trong thời kỳ kháng chiến',
+      'Thương binh',
+      'Bệnh binh',
+      'Người hoạt động kháng chiến bị nhiễm chất độc hóa học',
+      'Người hoạt động cách mạng, kháng chiến, bảo vệ Tổ quốc, làm nghĩa vụ quốc tế bị địch bắt tù, đày',
+      'Người hoạt động kháng chiến giải phóng dân tộc, bảo vệ Tổ quốc, làm nghĩa vụ quốc tế',
+      'Người có công giúp đỡ cách mạng'
+    ]);
     data.forEach(item => {
       if (item.dienChinhSach) {
         list.add(item.dienChinhSach);
@@ -577,18 +612,16 @@ export default function App() {
         }
 
         // Check month/year if selected
-        if (selectedMonthYear) {
-            const [targetYear, targetMonth] = selectedMonthYear.split('-');
+        if (selectedYear) {
             let itemYear = '';
-            let itemMonth = '';
-            
             if (itemDate && !isNaN(itemDate.getTime())) {
                 itemYear = itemDate.getFullYear().toString();
-                itemMonth = (itemDate.getMonth() + 1).toString().padStart(2, '0');
             } else if (dStr.match(/\b(20\d{2})\b/)) {
                 itemYear = dStr.match(/\b(20\d{2})\b/)[1];
+            } else if (dStr.match(/\b(\d{4})\b/)) {
+                itemYear = dStr.match(/\b(\d{4})\b/)[1];
             }
-            matchesMonth = itemYear === targetYear && itemMonth === targetMonth;
+            matchesMonth = itemYear === selectedYear;
         }
 
         // Check from/to date range
@@ -597,7 +630,7 @@ export default function App() {
 
       return matchSearch && matchDien && matchTinhTrang && matchTime;
     });
-  }, [data, searchQuery, selectedDienChinhSach, selectedTinhTrang, selectedMonthYear]);
+  }, [data, searchQuery, selectedDienChinhSach, selectedTinhTrang, selectedYear]);
 
   // Dashboard Statistics
   const stats = useMemo(() => {
@@ -870,216 +903,230 @@ export default function App() {
           {/* Dashboard mini-widgets */}
                     <div className="flex-1 overflow-y-auto flex flex-col relative">
             {activeSidebarTab === 'stats' && (
-              <div className="p-4 space-y-4">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-xs font-bold text-gray-500 uppercase tracking-widest flex items-center gap-1">
-                <Sparkles className="w-3.5 h-3.5 text-amber-500" /> THỐNG KÊ DỮ LIỆU
-              </h2>
-              {isSidebarOpenOnMobile && (
-                <button 
-                  onClick={() => setIsSidebarOpenOnMobile(false)}
-                  className="md:hidden p-1 text-gray-400 hover:text-gray-600 bg-white rounded border border-slate-200"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              )}
-            </div>
-            
-            {/* Stats grid */}
-            <div className="space-y-2">
-              <div className="grid grid-cols-2 gap-2">
-                <div className="bg-white border border-slate-200 rounded-lg p-2.5 shadow-sm text-center">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Tổng số hồ sơ</p>
-                  <p className="text-xl font-extrabold text-red-950 mt-0.5">{stats.total}</p>
+              <div className="p-4 space-y-4 animate-fade-in">
+                <div className="flex items-center justify-between mb-2">
+                  <h2 className="text-xs font-bold text-gray-500 uppercase tracking-widest flex items-center gap-1">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-500" /> THỐNG KÊ TỔNG QUAN
+                  </h2>
+                  {isSidebarOpenOnMobile && (
+                    <button 
+                      onClick={() => setIsSidebarOpenOnMobile(false)}
+                      className="md:hidden p-1 text-gray-400 hover:text-gray-600 bg-white rounded border border-slate-200"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
-                <div className="bg-slate-100 border border-slate-200 rounded-lg p-2.5 shadow-sm text-center">
-                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Đã từ trần</p>
-                  <p className="text-xl font-extrabold text-slate-700 mt-0.5">{stats.daMat}</p>
-                </div>
-              </div>
-              
-              <div className="bg-emerald-50/60 border border-emerald-100 rounded-lg p-2.5 shadow-sm">
-                <div className="flex justify-between items-center border-b border-emerald-100/50 pb-1.5 mb-1.5">
-                  <p className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse inline-block" />
-                    Hiện đang sinh sống
-                  </p>
-                  <p className="text-lg font-extrabold text-emerald-700">{stats.conSong + stats.dangCongTac}</p>
-                </div>
-                <div className="grid grid-cols-2 gap-2 text-center">
-                  <div className="bg-white/80 rounded p-1.5 border border-emerald-100/20">
-                    <p className="text-slate-500 text-[9px] font-medium">Hưu trí / Tuổi già</p>
-                    <p className="font-extrabold text-slate-800 text-xs mt-0.5">{stats.conSong}</p>
-                  </div>
-                  <div className="bg-white/80 rounded p-1.5 border border-emerald-100/20">
-                    <p className="text-slate-500 text-[9px] font-medium">Đang công tác</p>
-                    <p className="font-extrabold text-slate-800 text-xs mt-0.5">{stats.dangCongTac}</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
 
-              
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="col-span-2 bg-red-800 rounded-xl p-4 text-white shadow-md relative overflow-hidden">
+                    <div className="absolute right-0 top-0 bottom-0 w-24 bg-gradient-to-l from-red-900 to-transparent opacity-50" />
+                    <Database className="w-6 h-6 text-red-300 mb-1" />
+                    <div className="text-3xl font-display font-bold">{stats.total}</div>
+                    <div className="text-xs font-medium text-red-200 uppercase tracking-wide mt-1">Tổng số hồ sơ</div>
+                  </div>
+                  
+                  <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3 shadow-sm">
+                    <div className="text-xl font-display font-bold text-emerald-700">{stats.conSong}</div>
+                    <div className="text-[10px] font-bold text-emerald-600/80 uppercase tracking-wide mt-1">Còn sống</div>
+                  </div>
+                  
+                  <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 shadow-sm">
+                    <div className="text-xl font-display font-bold text-amber-700">{stats.dangCongTac}</div>
+                    <div className="text-[10px] font-bold text-amber-600/80 uppercase tracking-wide mt-1">Đang công tác</div>
+                  </div>
+                  
+                  <div className="col-span-2 bg-slate-50 border border-slate-200 rounded-xl p-3 shadow-sm flex items-center justify-between">
+                    <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Đã mất (Đã chết)</div>
+                    <div className="text-lg font-display font-bold text-slate-700">{stats.daMat}</div>
+                  </div>
+                </div>
+              </div>
             )}
-            
+
             {activeSidebarTab === 'profiles' && (
-              <div className="flex flex-col h-full absolute inset-0">
-                {/* Search and Filters panel */}
-          <div className="p-4 border-b border-slate-100 bg-white space-y-3 shrink-0">
-            {/* Search Input */}
-            <div className="relative">
-              <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
-              <input
-                type="text"
-                placeholder="Tìm họ tên hoặc địa chỉ..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-800 focus:bg-white transition-all"
-              />
-              {searchQuery && (
-                <button 
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 text-xs"
-                >
-                  Xóa
-                </button>
-              )}
-            </div>
+              <div className="flex flex-col h-full animate-fade-in">
+                {/* Filters Area */}
+                <div className="p-4 border-b border-slate-100 bg-white space-y-3 shrink-0">
+                  <div className="flex items-center justify-between mb-1 md:hidden">
+                    <h2 className="text-xs font-bold text-gray-500 uppercase tracking-widest flex items-center gap-1">
+                      <Search className="w-3.5 h-3.5 text-slate-400" /> TÌM KIẾM
+                    </h2>
+                    <button 
+                      onClick={() => setIsSidebarOpenOnMobile(false)}
+                      className="p-1 text-gray-400 hover:text-gray-600 bg-white rounded border border-slate-200"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
 
-            {/* Filters grid */}
-            <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-1 md:col-span-2 lg:col-span-1">
-                <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Thời gian dữ liệu</label>
-                <div className="relative">
-                  <Calendar className="absolute left-2 top-2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
-                  <input
-                    type="month"
-                    value={selectedMonthYear}
-                    onChange={(e) => setSelectedMonthYear(e.target.value)}
-                    className="w-full pl-7 pr-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-red-800"
-                  />
-                </div>
-              </div>
+                  {/* Search Input */}
+                  <div className="relative">
+                    <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Tìm họ tên hoặc địa chỉ..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-800 focus:bg-white transition-all"
+                    />
+                    {searchQuery && (
+                      <button 
+                        onClick={() => setSearchQuery('')}
+                        className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 text-xs"
+                      >
+                        Xóa
+                      </button>
+                    )}
+                  </div>
 
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Tình trạng</label>
-                <div className="relative">
-                  <Eye className="absolute left-2 top-2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
-                  <select
-                    value={selectedTinhTrang}
-                    onChange={(e) => setSelectedTinhTrang(e.target.value)}
-                    className="w-full pl-7 pr-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-red-800 appearance-none"
-                  >
-                    <option value="Tất cả">Tất cả</option>
-                    <option value="Còn sống">Còn sống</option>
-                    <option value="Đang công tác">Đang công tác</option>
-                    <option value="Đã mất">Đã mất (Đã chết)</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            {/* Clear Filters Indicator */}
-            {(selectedDienChinhSach !== 'Tất cả' || selectedTinhTrang !== 'Tất cả' || selectedMonthYear !== '' || searchQuery) && (
-              <div className="flex justify-between items-center text-[11px] text-red-800 bg-red-50 p-1.5 rounded-md border border-red-100">
-                <span>Đang lọc: Tìm thấy {filteredData?.length} kết quả</span>
-                <button 
-                  onClick={() => {
-                    setSelectedDienChinhSach('Tất cả');
-                    setSelectedTinhTrang('Tất cả');
-                    setSelectedMonthYear('');
-                    setSearchQuery('');
-                  }}
-                  className="font-bold underline uppercase tracking-wider text-[9px] hover:text-red-950"
-                >
-                  Đặt lại lọc
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* Results List */}
-                <div className="flex-1 overflow-y-auto bg-slate-50 p-3 space-y-2">
-            {filteredData?.length === 0 ? (
-              <div className="py-12 px-4 text-center bg-white rounded-xl border border-slate-200">
-                <MapPin className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                <p className="text-sm font-semibold text-slate-500">Không tìm thấy người có công nào</p>
-                <p className="text-xs text-slate-400 mt-1">Vui lòng thay đổi từ khóa hoặc bộ lọc của bạn.</p>
-              </div>
-            ) : (
-              filteredData.map((person) => {
-                const isSelected = selectedPerson?.id === person.id;
-                
-                // Color mapping for layout borders and badges
-                let badgeStyle = 'bg-red-50 text-red-800 border-red-200';
-                let indicatorColor = 'bg-red-600';
-                
-                if (person.tinhTrang === 'Đã mất (Đã chết)') {
-                  badgeStyle = 'bg-slate-100 text-slate-700 border-slate-200';
-                  indicatorColor = 'bg-slate-500';
-                } else if (person.tinhTrang === 'Đang công tác') {
-                  badgeStyle = 'bg-amber-50 text-amber-800 border-amber-200';
-                  indicatorColor = 'bg-amber-500';
-                }
-
-                return (
-                  <div
-                    key={person.id}
-                    onClick={() => handleSelectPerson(person)}
-                    className={`
-                      p-3 rounded-lg border bg-white transition-all duration-200 cursor-pointer flex gap-3 group hover:shadow-md hover:border-red-800/40 relative overflow-hidden
-                      ${isSelected ? 'border-red-800 ring-2 ring-red-800/10 shadow-md bg-red-50/10' : 'border-slate-200'}
-                    `}
-                  >
-                    {/* Status side indicator bar */}
-                    <div className={`absolute left-0 top-0 bottom-0 w-1 ${indicatorColor}`} />
-
-                    {/* Left avatar placeholder */}
-                    <div className="w-12 h-12 rounded-lg bg-slate-100 overflow-hidden shrink-0 border border-slate-200 flex items-center justify-center relative">
-                      <img 
-                        src={person.hinhAnh || DEFAULT_PORTRAIT_URL} 
-                        alt={person.hoTen}
-                        referrerPolicy="no-referrer"
-                        className="w-full h-full object-cover"
-                        onError={(e) => {
-                          // fallback
-                          (e.currentTarget as HTMLImageElement).src = DEFAULT_PORTRAIT_URL;
-                        }}
-                      />
-                    </div>
-
-                    {/* Right text content */}
-                    <div className="flex-1 min-w-0 space-y-1">
-                      <div className="flex items-start justify-between gap-1">
-                        <h3 className="font-bold text-slate-900 group-hover:text-red-950 text-sm leading-tight truncate">
-                          {person.hoTen}
-                        </h3>
-                        <span className="text-[10px] text-slate-400 shrink-0 font-medium font-mono">
-                          {person.namSinh}
-                        </span>
+                  {/* Filters grid */}
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Năm dữ liệu</label>
+                        <div className="relative">
+                          <Calendar className="absolute left-2 top-2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+                          <input
+                            type="number"
+                            placeholder="Tất cả"
+                            value={selectedYear}
+                            onChange={(e) => setSelectedYear(e.target.value)}
+                            className="w-full pl-7 pr-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-red-800"
+                          />
+                        </div>
                       </div>
 
-                      <p className="text-[11px] text-slate-500 truncate">
-                        {person.dienChinhSach}
-                      </p>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Tình trạng</label>
+                        <div className="relative">
+                          <Eye className="absolute left-2 top-2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+                          <select
+                            value={selectedTinhTrang}
+                            onChange={(e) => setSelectedTinhTrang(e.target.value)}
+                            className="w-full pl-7 pr-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-red-800 appearance-none"
+                          >
+                            <option value="Tất cả">Tất cả</option>
+                            <option value="Còn sống">Còn sống</option>
+                            <option value="Đang công tác">Đang công tác</option>
+                            <option value="Đã mất">Đã mất (Đã chết)</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
 
-                      <div className="flex flex-wrap items-center justify-between gap-1 pt-1 border-t border-slate-100/60">
-                        <span className="text-[11px] text-slate-400 truncate max-w-[140px] flex items-center gap-0.5">
-                          <MapPin className="w-3 h-3 text-red-800" /> {person.diaChi.split(',')[0]}
-                        </span>
-                        
-                        <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold border ${badgeStyle}`}>
-                          {person.tinhTrang}
-                        </span>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Diện chính sách</label>
+                      <div className="relative">
+                        <Award className="absolute left-2 top-2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+                        <select
+                          value={selectedDienChinhSach}
+                          onChange={(e) => setSelectedDienChinhSach(e.target.value)}
+                          className="w-full pl-7 pr-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-red-800 appearance-none"
+                        >
+                          {listDienChinhSach.map(dien => (
+                            <option key={dien} value={dien}>{dien}</option>
+                          ))}
+                        </select>
                       </div>
                     </div>
                   </div>
-                );
-              })
-            )}
-          </div>
 
+                  {/* Clear Filters Indicator */}
+                  {(selectedDienChinhSach !== 'Tất cả' || selectedTinhTrang !== 'Tất cả' || selectedYear !== '' || searchQuery) && (
+                    <div className="flex justify-between items-center text-[11px] text-red-800 bg-red-50 p-1.5 rounded-md border border-red-100">
+                      <span>Đang lọc: {filteredData?.length} kết quả</span>
+                      <button 
+                        onClick={() => {
+                          setSelectedDienChinhSach('Tất cả');
+                          setSelectedTinhTrang('Tất cả');
+                          setSelectedYear('');
+                          setSearchQuery('');
+                        }}
+                        className="font-bold underline uppercase tracking-wider text-[9px] hover:text-red-950"
+                      >
+                        Đặt lại lọc
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Results List */}
+                <div className="flex-1 overflow-y-auto bg-slate-50 p-3 space-y-2">
+                  {filteredData?.length === 0 ? (
+                    <div className="py-12 px-4 text-center bg-white rounded-xl border border-slate-200 shadow-sm">
+                      <MapPin className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                      <p className="text-sm font-semibold text-slate-500">Không tìm thấy hồ sơ nào</p>
+                      <p className="text-[11px] text-slate-400 mt-1">Thử xóa bớt bộ lọc hoặc thay đổi từ khóa</p>
+                    </div>
+                  ) : (
+                    filteredData.map((person) => {
+                      const isSelected = selectedPerson?.id === person.id;
+                      
+                      let badgeStyle = 'bg-red-50 text-red-800 border-red-200';
+                      let indicatorColor = 'bg-red-600';
+                      
+                      if (person.tinhTrang === 'Đã mất (Đã chết)') {
+                        badgeStyle = 'bg-slate-100 text-slate-700 border-slate-200';
+                        indicatorColor = 'bg-slate-500';
+                      } else if (person.tinhTrang === 'Đang công tác') {
+                        badgeStyle = 'bg-amber-50 text-amber-800 border-amber-200';
+                        indicatorColor = 'bg-amber-500';
+                      }
+
+                      return (
+                        <div
+                          key={person.id}
+                          onClick={() => handleSelectPerson(person)}
+                          className={`
+                            p-3 rounded-lg border bg-white transition-all duration-200 cursor-pointer flex gap-3 group hover:shadow-md hover:border-red-800/40 relative overflow-hidden
+                            ${isSelected ? 'border-red-800 ring-2 ring-red-800/10 shadow-md bg-red-50/10' : 'border-slate-200'}
+                          `}
+                        >
+                          <div className={`absolute left-0 top-0 bottom-0 w-1 ${indicatorColor}`} />
+                          
+                          <div className="w-12 h-12 rounded-lg bg-slate-100 overflow-hidden shrink-0 border border-slate-200 flex items-center justify-center relative">
+                            <img 
+                              src={person.hinhAnh || DEFAULT_PORTRAIT_URL} 
+                              alt={person.hoTen}
+                              referrerPolicy="no-referrer"
+                              className="w-full h-full object-cover"
+                              onError={(e) => {
+                                (e.currentTarget as HTMLImageElement).src = DEFAULT_PORTRAIT_URL;
+                              }}
+                            />
+                          </div>
+
+                          <div className="flex-1 min-w-0 flex flex-col justify-center space-y-1">
+                            <div className="flex items-start justify-between gap-1">
+                              <h3 className="font-bold text-slate-900 group-hover:text-red-950 text-sm leading-tight truncate">
+                                {person.hoTen}
+                              </h3>
+                              {person.namDuLieu && (
+                                <span className="text-[9px] font-mono text-slate-400 shrink-0 border border-slate-100 px-1 rounded bg-slate-50">
+                                  {person.namDuLieu.match(/\b(20\d{2})\b/)?.[1] || person.namDuLieu}
+                                </span>
+                              )}
+                            </div>
+                            
+                            <p className="text-[11px] text-slate-500 truncate font-medium">
+                              {person.dienChinhSach}
+                            </p>
+                            
+                            <div className="flex items-center justify-between gap-2 mt-1">
+                              <span className="text-[10px] text-slate-400 truncate flex items-center gap-0.5">
+                                <MapPin className="w-3 h-3 text-red-800/70" /> {person.diaChi.split(',')[0]}
+                              </span>
+                              <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold border ${badgeStyle} shrink-0`}>
+                                {person.tinhTrang}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
               </div>
             )}
           </div>
@@ -1740,6 +1787,20 @@ export default function App() {
               </p>
 
               <div className="space-y-3">
+                <label className="flex items-center gap-2 p-3 border rounded-lg cursor-pointer hover:bg-red-50 border-red-200 transition-colors">
+                  <input 
+                    type="radio" 
+                    name="resetMode" 
+                    checked={resetMode === 'empty'} 
+                    onChange={() => setResetMode('empty')}
+                    className="text-red-800 focus:ring-red-800 w-4 h-4"
+                  />
+                  <div>
+                    <div className="font-bold text-sm text-red-800">Xóa sạch dữ liệu</div>
+                    <div className="text-[11px] text-red-600/80">Xóa toàn bộ danh sách hiện tại để có bản đồ trống (kể cả dữ liệu mẫu).</div>
+                  </div>
+                </label>
+                
                 <label className="flex items-center gap-2 p-3 border rounded-lg cursor-pointer hover:bg-slate-50 transition-colors">
                   <input 
                     type="radio" 
@@ -1749,8 +1810,8 @@ export default function App() {
                     className="text-red-800 focus:ring-red-800 w-4 h-4"
                   />
                   <div>
-                    <div className="font-bold text-sm text-slate-800">Khôi phục toàn bộ</div>
-                    <div className="text-[11px] text-slate-500">Xóa toàn bộ dữ liệu hiện tại và tải lại dữ liệu mẫu.</div>
+                    <div className="font-bold text-sm text-slate-800">Khôi phục toàn bộ (Dữ liệu mẫu)</div>
+                    <div className="text-[11px] text-slate-500">Tải lại dữ liệu mẫu (demo) ban đầu.</div>
                   </div>
                 </label>
 
