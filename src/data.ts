@@ -20,7 +20,7 @@ export const MOCK_DATA: NguoiCoCong[] = [
     hoTen: 'Nguyễn Văn A',
     namSinh: '1948',
     dienChinhSach: 'Thương binh hạng 2/4',
-    tinhTrang: 'Còn sống',
+    tinhTrang: 'Hưu trí (Cựu chiến binh)',
     diaChi: 'Thôn 1, xã Hàm Yên, tỉnh Tuyên Quang',
     lat: 21.9863,
     lng: 105.0863,
@@ -62,7 +62,7 @@ export const MOCK_DATA: NguoiCoCong[] = [
     hoTen: 'Lê Hoàng Minh',
     namSinh: '1940',
     dienChinhSach: 'Bị nhiễm chất độc hóa học',
-    tinhTrang: 'Còn sống',
+    tinhTrang: 'Hưu trí (Cựu chiến binh)',
     diaChi: 'Thôn 4, xã Hàm Yên, tỉnh Tuyên Quang',
     lat: 21.9870,
     lng: 105.0812,
@@ -107,7 +107,7 @@ export function parseCSVToNguoiCoCong(parsedRows: any[]): NguoiCoCong[] {
       let hoTen = '';
       let namSinh = '';
       let dienChinhSach = '';
-      let tinhTrang = 'Còn sống';
+      let tinhTrang = 'Hưu trí (Cựu chiến binh)';
       let diaChi = '';
       let lat = 0;
       let lng = 0;
@@ -198,7 +198,7 @@ export function parseCSVToNguoiCoCong(parsedRows: any[]): NguoiCoCong[] {
         hoTen,
         namSinh,
         dienChinhSach: dienChinhSach || 'Chưa phân loại',
-        tinhTrang: tinhTrang || 'Còn sống',
+        tinhTrang: (!tinhTrang || tinhTrang === 'Còn sống') ? 'Hưu trí (Cựu chiến binh)' : tinhTrang,
         diaChi: diaChi || 'Chưa cập nhật địa chỉ',
         lat,
         lng,

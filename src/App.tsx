@@ -23,12 +23,14 @@ import {
   Map as MapIcon,
   HelpCircle,
   Eye,
+  EyeOff,
   HeartHandshake,
   Upload,
   Layers,
   Locate,
   ArrowLeftRight,
-  Download
+  Download,
+  Settings
 } from 'lucide-react';
 import { NguoiCoCong } from './types';
 import { MOCK_DATA, DEFAULT_PORTRAIT_URL, parseCSVToNguoiCoCong } from './data';
@@ -55,6 +57,7 @@ export default function App() {
 
   // UI state
   const [selectedPerson, setSelectedPerson] = useState<NguoiCoCong | null>(null);
+  const [actionPerson, setActionPerson] = useState<NguoiCoCong | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [globalSearchQuery, setGlobalSearchQuery] = useState<string>('');
   const [showGlobalSearchResults, setShowGlobalSearchResults] = useState<boolean>(false);
@@ -68,10 +71,40 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   
+  // Saved Settings State
+  const [savedCenter, setSavedCenter] = useState<[number, number]>(() => {
+    const saved = localStorage.getItem('saved_map_center');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length === 2 && typeof parsed[0] === 'number' && typeof parsed[1] === 'number') {
+          return parsed as [number, number];
+        }
+      } catch (e) {}
+    }
+    return [21.9863, 105.0863]; // Default center
+  });
+  const [savedCenterUrl, setSavedCenterUrl] = useState<string>(() => {
+    return localStorage.getItem('saved_map_center_url') || '21.9863, 105.0863';
+  });
+  const [defaultYearSetting, setDefaultYearSetting] = useState<string>(() => {
+    return localStorage.getItem('saved_default_year') || '';
+  });
+
+  const [hideHuutri, setHideHuutri] = useState<boolean>(() => {
+    return localStorage.getItem('hide_huutri') === 'true';
+  });
+  const [hideDaMat, setHideDaMat] = useState<boolean>(() => {
+    return localStorage.getItem('hide_damat') === 'true';
+  });
+  const [hideDangCongTac, setHideDangCongTac] = useState<boolean>(() => {
+    return localStorage.getItem('hide_dangcongtac') === 'true';
+  });
+  
   // Mobile drawers state
   const [isSidebarOpenOnMobile, setIsSidebarOpenOnMobile] = useState<boolean>(false);
   const [showSyncModal, setShowSyncModal] = useState<boolean>(false);
-  const [activeSidebarTab, setActiveSidebarTab] = useState<"stats" | "profiles">("stats");
+  const [activeSidebarTab, setActiveSidebarTab] = useState<"stats" | "profiles" | "settings">("settings");
   const [showGuideModal, setShowGuideModal] = useState<boolean>(false);
   const [showResetModal, setShowResetModal] = useState<boolean>(false);
   const [resetFromDate, setResetFromDate] = useState<string>('');
@@ -79,6 +112,103 @@ export default function App() {
   const [resetMode, setResetMode] = useState<'all' | 'range' | 'empty'>('all');
   
   const [activeSyncTab, setActiveSyncTab] = useState<'sheets' | 'local'>('sheets');
+
+  // --- SYNC WITH EXPRESS SERVER ---
+  const updateDataAndServer = (newData: NguoiCoCong[]) => {
+    setData(newData);
+    localStorage.setItem('saved_nguoi_co_cong_data', JSON.stringify(newData));
+    fetch('/api/data', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ data: newData })
+    }).catch(err => console.error("Error writing data to server:", err));
+  };
+
+  const updateSheetUrlAndServer = (newUrl: string) => {
+    setSheetUrl(newUrl);
+    if (newUrl) {
+      localStorage.setItem('saved_sheet_url', newUrl);
+    } else {
+      localStorage.removeItem('saved_sheet_url');
+    }
+    fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sheetUrl: newUrl })
+    }).catch(err => console.error("Error writing sheet URL to server:", err));
+  };
+
+  const updateDefaultYearSettingAndServer = (newYear: string) => {
+    setDefaultYearSetting(newYear);
+    if (newYear) {
+      localStorage.setItem('saved_default_year', newYear);
+    } else {
+      localStorage.removeItem('saved_default_year');
+    }
+    fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ defaultYear: newYear })
+    }).catch(err => console.error("Error writing default year to server:", err));
+  };
+
+  // Load initial data and settings from Express backend server on mount
+  useEffect(() => {
+    let active = true;
+
+    async function loadServerData() {
+      try {
+        // 1. Fetch settings
+        const settingsRes = await fetch('/api/settings');
+        if (settingsRes.ok) {
+          const settings = await settingsRes.json();
+          if (active) {
+            if (settings.sheetUrl) {
+              setSheetUrl(settings.sheetUrl);
+              localStorage.setItem('saved_sheet_url', settings.sheetUrl);
+            }
+            if (settings.defaultYear) {
+              setDefaultYearSetting(settings.defaultYear);
+              localStorage.setItem('saved_default_year', settings.defaultYear);
+            }
+          }
+        }
+
+        // 2. Fetch data
+        const dataRes = await fetch('/api/data');
+        if (dataRes.ok) {
+          const result = await dataRes.json();
+          if (active) {
+            if (result.exists) {
+              setData(result.data);
+              localStorage.setItem('saved_nguoi_co_cong_data', JSON.stringify(result.data));
+            } else {
+              // Server has no data saved yet. Let's upload current client state (localStorage or MOCK_DATA)
+              const currentLocalData = localStorage.getItem('saved_nguoi_co_cong_data');
+              let dataToUpload = MOCK_DATA;
+              if (currentLocalData) {
+                try {
+                  dataToUpload = JSON.parse(currentLocalData);
+                } catch (e) {}
+              }
+              fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ data: dataToUpload })
+              }).catch(err => console.error("Error initializing server data:", err));
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Failed to connect to backend api, using local storage fallback:", err);
+      }
+    }
+
+    loadServerData();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const parseDateString = (dStr: string) => {
     if (!dStr) return null;
@@ -104,17 +234,13 @@ export default function App() {
   const executeResetData = () => {
     let finalData = data;
     if (resetMode === 'empty') {
-      setData([]);
-      setSheetUrl('');
-      localStorage.removeItem('saved_sheet_url');
-      localStorage.removeItem('saved_nguoi_co_cong_data');
+      updateDataAndServer([]);
+      updateSheetUrlAndServer('');
       setSuccessMsg('Đã xóa toàn bộ dữ liệu.');
       finalData = [];
     } else if (resetMode === 'all') {
-      setData(MOCK_DATA);
-      setSheetUrl('');
-      localStorage.removeItem('saved_sheet_url');
-      localStorage.removeItem('saved_nguoi_co_cong_data');
+      updateDataAndServer(MOCK_DATA);
+      updateSheetUrlAndServer('');
       setSuccessMsg('Đã khôi phục toàn bộ dữ liệu mẫu gốc.');
       finalData = MOCK_DATA;
     } else {
@@ -145,10 +271,7 @@ export default function App() {
       });
 
       finalData = [...remainingData, ...restoredMockData];
-      setData(finalData);
-      
-      // Save to localStorage so it persists
-      localStorage.setItem('saved_nguoi_co_cong_data', JSON.stringify(finalData));
+      updateDataAndServer(finalData);
 
       setSuccessMsg('Đã khôi phục dữ liệu gốc cho khoảng thời gian đã chọn.');
     }
@@ -183,7 +306,7 @@ export default function App() {
   const gpsMarkerRef = useRef<L.Marker | null>(null);
 
   // Set default view on map or adjust bounds to match markers
-  const vietnamCenter: [number, number] = [21.9863, 105.0863]; // Viet Thanh, Ham Yen, Tuyen Quang
+  const vietnamCenter: [number, number] = savedCenter; // Dynamic center based on user configuration
 
   // Initialize Map
   useEffect(() => {
@@ -213,12 +336,73 @@ export default function App() {
       }, 500);
     }
 
+    // Add map click listener to show coordinates and copy button
+    map.on('click', (e: L.LeafletMouseEvent) => {
+      const lat = e.latlng.lat;
+      const lng = e.latlng.lng;
+      const latLngStr = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+
+      L.popup()
+        .setLatLng(e.latlng)
+        .setContent(`
+          <div class="p-2.5 font-sans text-center min-w-[200px]">
+            <p class="text-[10px] uppercase font-bold tracking-widest text-slate-400 mb-1">Tọa độ điểm bấm</p>
+            <p class="font-mono text-xs font-bold text-slate-800 bg-slate-50 border border-slate-200 py-1.5 px-2 rounded mb-2.5 select-all">${latLngStr}</p>
+            <button 
+              id="copy-coords-btn" 
+              data-coords="${latLngStr}"
+              class="w-full bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-bold py-1.5 px-2.5 rounded cursor-pointer transition-colors shadow-xs font-sans uppercase tracking-wider"
+            >
+              Sao chép tọa độ
+            </button>
+          </div>
+        `)
+        .openOn(map);
+    });
+
     return () => {
       if (mapRef.current) {
         mapRef.current.remove();
         mapRef.current = null;
         setMapInstance(null);
       }
+    };
+  }, []);
+
+  // Listen for copy coordinate clicks from map popups
+  useEffect(() => {
+    const handleCopyClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (target && target.id === 'copy-coords-btn') {
+        const coords = target.getAttribute('data-coords');
+        if (coords) {
+          navigator.clipboard.writeText(coords)
+            .then(() => {
+              setSuccessMsg(`Đã sao chép tọa độ: ${coords}`);
+              setTimeout(() => setSuccessMsg(null), 2500);
+            })
+            .catch(() => {
+              // Fallback
+              try {
+                const tempInput = document.createElement('input');
+                tempInput.value = coords;
+                document.body.appendChild(tempInput);
+                tempInput.select();
+                document.execCommand('copy');
+                document.body.removeChild(tempInput);
+                setSuccessMsg(`Đã sao chép tọa độ: ${coords}`);
+                setTimeout(() => setSuccessMsg(null), 2500);
+              } catch (err) {
+                console.error("Clipboard copy failed:", err);
+              }
+            });
+        }
+      }
+    };
+
+    document.addEventListener('click', handleCopyClick);
+    return () => {
+      document.removeEventListener('click', handleCopyClick);
     };
   }, []);
 
@@ -455,7 +639,7 @@ export default function App() {
           'Họ tên': 'Nguyễn Văn A',
           'Năm sinh': '1948',
           'Diện chính sách': 'Thương binh hạng 2/4',
-          'Tình trạng': 'Còn sống',
+          'Tình trạng': 'Hưu trí (Cựu chiến binh)',
           'Địa chỉ': 'Thôn 1, xã Hàm Yên, huyện Hàm Yên, tỉnh Tuyên Quang',
           'Tọa độ Lat': 21.9863,
           'Tọa độ Lng': 105.0863,
@@ -558,9 +742,8 @@ export default function App() {
               setError('Kết nối thành công nhưng cấu trúc các cột (headers) không khớp với tiêu chuẩn. Vui lòng tải dữ liệu đúng cấu trúc.');
               setIsLoading(false);
             } else {
-              setData(parsed);
-              localStorage.setItem('saved_sheet_url', urlToSync);
-              localStorage.setItem('saved_nguoi_co_cong_data', JSON.stringify(parsed));
+              updateDataAndServer(parsed);
+              updateSheetUrlAndServer(urlToSync);
               setSuccessMsg(`Đồng bộ thành công! Đã cập nhật thông tin của ${parsed?.length} người có công.`);
               setShowSyncModal(false);
               setIsLoading(false);
@@ -610,8 +793,7 @@ export default function App() {
             setError('Đọc tệp thành công nhưng cấu trúc các cột không khớp với tiêu chuẩn. Vui lòng kiểm tra dòng tiêu đề (headers) tiếng Việt của tệp.');
             setIsLoading(false);
           } else {
-            setData(parsed);
-            localStorage.setItem('saved_nguoi_co_cong_data', JSON.stringify(parsed));
+            updateDataAndServer(parsed);
             setSuccessMsg(`Đồng bộ thành công từ tệp cục bộ! Đã cập nhật thông tin của ${parsed?.length} người có công.`);
             setShowSyncModal(false);
             setIsLoading(false);
@@ -693,8 +875,8 @@ export default function App() {
       const matchDien = selectedDienChinhSach === 'Tất cả' || item.dienChinhSach === selectedDienChinhSach;
       const matchTinhTrang = (() => {
         if (selectedTinhTrang === 'Tất cả') return true;
-        if (selectedTinhTrang === 'Còn sống') {
-          return item.tinhTrang === 'Còn sống' || item.tinhTrang === 'Đang công tác';
+        if (selectedTinhTrang === 'Hưu trí (Cựu chiến binh)' || selectedTinhTrang === 'Còn sống') {
+          return item.tinhTrang === 'Hưu trí (Cựu chiến binh)' || item.tinhTrang === 'Còn sống' || item.tinhTrang === 'Đang công tác';
         }
         if (selectedTinhTrang === 'Đang công tác') {
           return item.tinhTrang === 'Đang công tác';
@@ -759,9 +941,16 @@ export default function App() {
         return matchesMonth;
       })();
 
-      return matchSearch && matchDien && matchTinhTrang && matchTime;
+      const matchHideSettings = (() => {
+        if (hideHuutri && (item.tinhTrang === 'Hưu trí (Cựu chiến binh)' || item.tinhTrang === 'Còn sống')) return false;
+        if (hideDaMat && (item.tinhTrang === 'Đã mất (Đã chết)' || item.tinhTrang === 'Đã mất')) return false;
+        if (hideDangCongTac && item.tinhTrang === 'Đang công tác') return false;
+        return true;
+      })();
+
+      return matchSearch && matchDien && matchTinhTrang && matchTime && matchHideSettings;
     });
-  }, [data, searchQuery, globalSearchQuery, selectedDienChinhSach, selectedTinhTrang, selectedYear, selectedMonth]);
+  }, [data, searchQuery, globalSearchQuery, selectedDienChinhSach, selectedTinhTrang, selectedYear, selectedMonth, hideHuutri, hideDaMat, hideDangCongTac]);
 
   // Global Search Results
   const globalSearchResults = useMemo(() => {
@@ -775,7 +964,7 @@ export default function App() {
   // Dashboard Statistics
   const stats = useMemo(() => {
     const total = (data || [])?.length;
-    const conSong = (data || []).filter(item => item.tinhTrang === 'Còn sống')?.length;
+    const conSong = (data || []).filter(item => item.tinhTrang === 'Hưu trí (Cựu chiến binh)' || item.tinhTrang === 'Còn sống')?.length;
     const dangCongTac = (data || []).filter(item => item.tinhTrang === 'Đang công tác')?.length;
     const daMat = (data || []).filter(item => item.tinhTrang === 'Đã mất (Đã chết)')?.length;
     return { total, conSong, dangCongTac, daMat };
@@ -918,9 +1107,8 @@ export default function App() {
     }
   }, [filteredData]);
 
-  // Selection trigger: Zoom map & Open Popup
-  const handleSelectPerson = (person: NguoiCoCong) => {
-    setSelectedPerson(person);
+  // Map focus only (without opening full profile details modal)
+  const handleFocusOnMap = (person: NguoiCoCong) => {
     if (mapRef.current) {
       mapRef.current.setView([person.lat, person.lng], 16);
       
@@ -949,6 +1137,126 @@ export default function App() {
     if (window.innerWidth < 768) {
       setIsSidebarOpenOnMobile(false);
     }
+  };
+
+  // Selection trigger: Zoom map & Open Popup
+  const handleSelectPerson = (person: NguoiCoCong) => {
+    setSelectedPerson(person);
+    handleFocusOnMap(person);
+  };
+
+  // Parse Google Maps URLs or standard coordinates format
+  const parseCoordinates = (input: string): [number, number] | null => {
+    if (!input) return null;
+    
+    // Try regex for coordinate pattern: latitude, longitude (e.g. 21.9863, 105.0863)
+    const coordRegex = /(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/;
+    let match = input.match(coordRegex);
+    if (match) {
+      const lat = parseFloat(match[1]);
+      const lng = parseFloat(match[2]);
+      if (!isNaN(lat) && !isNaN(lng)) {
+        return [lat, lng];
+      }
+    }
+    
+    // Try regex for @lat,lng style inside google maps url (e.g. @21.9863,105.0863)
+    const urlRegex = /@(-?\d+\.\d+),(-?\d+\.\d+)/;
+    match = input.match(urlRegex);
+    if (match) {
+      const lat = parseFloat(match[1]);
+      const lng = parseFloat(match[2]);
+      if (!isNaN(lat) && !isNaN(lng)) {
+        return [lat, lng];
+      }
+    }
+
+    // Try regex for query parameter ?q=lat,lng or query=lat,lng
+    const queryRegex = /[?&](?:q|query|daddr)=(-?\d+\.\d+),(-?\d+\.\d+)/;
+    match = input.match(queryRegex);
+    if (match) {
+      const lat = parseFloat(match[1]);
+      const lng = parseFloat(match[2]);
+      if (!isNaN(lat) && !isNaN(lng)) {
+        return [lat, lng];
+      }
+    }
+
+    // Try splitting by space or other characters
+    const parts = input.trim().split(/[\s,]+/);
+    if (parts.length >= 2) {
+      const lat = parseFloat(parts[0]);
+      const lng = parseFloat(parts[1]);
+      if (!isNaN(lat) && !isNaN(lng)) {
+        return [lat, lng];
+      }
+    }
+
+    return null;
+  };
+
+  // Live parsed center coordinates for UI status display
+  const liveParsedCenter = useMemo(() => {
+    return parseCoordinates(savedCenterUrl);
+  }, [savedCenterUrl]);
+
+  // Handle saving default year setting
+  const handleSaveDefaultYear = (yearVal: string) => {
+    const trimmed = yearVal.trim();
+    if (trimmed) {
+      updateDefaultYearSettingAndServer(trimmed);
+      setSuccessMsg(`Đã lưu năm lưu hồ sơ mặc định: ${trimmed}`);
+    } else {
+      updateDefaultYearSettingAndServer('');
+      setSuccessMsg('Đã xóa cấu hình năm lưu hồ sơ mặc định');
+    }
+    setTimeout(() => setSuccessMsg(null), 3000);
+  };
+
+  // Handle saving map center coordinates
+  const handleSaveMapCenter = () => {
+    const coords = parseCoordinates(savedCenterUrl);
+    if (coords) {
+      localStorage.setItem('saved_map_center', JSON.stringify(coords));
+      localStorage.setItem('saved_map_center_url', savedCenterUrl);
+      setSavedCenter(coords);
+      setSuccessMsg(`Đã lưu vị trí trung tâm cố định: [${coords[0].toFixed(5)}, ${coords[1].toFixed(5)}]`);
+      if (mapInstance) {
+        mapInstance.setView(coords, 14);
+      }
+    } else {
+      setError('Định dạng tọa độ hoặc liên kết Google Maps không hợp lệ.');
+      setTimeout(() => setError(null), 4000);
+    }
+    setTimeout(() => setSuccessMsg(null), 3000);
+  };
+
+  // Get current map coordinates to fill input
+  const handleGetCurrentMapCenter = () => {
+    if (mapInstance) {
+      const center = mapInstance.getCenter();
+      const formatted = `${center.lat.toFixed(6)}, ${center.lng.toFixed(6)}`;
+      setSavedCenterUrl(formatted);
+      setSuccessMsg('Đã lấy tọa độ trung tâm hiện tại của bản đồ!');
+      setTimeout(() => setSuccessMsg(null), 2500);
+    } else {
+      setError('Bản đồ chưa sẵn sàng.');
+      setTimeout(() => setError(null), 3000);
+    }
+  };
+
+  // Reset map center back to default
+  const handleResetMapCenter = () => {
+    const defaultCoords: [number, number] = [21.9863, 105.0863];
+    localStorage.removeItem('saved_map_center');
+    localStorage.removeItem('saved_map_center_url');
+    setSavedCenter(defaultCoords);
+    setSavedCenterUrl('21.9863, 105.0863');
+    setSuccessMsg('Đã khôi phục vị trí trung tâm mặc định.');
+    if (mapInstance) {
+      mapInstance.setView(defaultCoords, 14);
+    }
+    setTimeout(() => setSuccessMsg(null), 3000);
   };
 
   return (
@@ -1013,6 +1321,7 @@ export default function App() {
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && globalSearchResults.length > 0) {
                     handleSelectPerson(globalSearchResults[0]);
+                    handleFocusOnMap(globalSearchResults[0]);
                     setGlobalSearchQuery(globalSearchResults[0].hoTen);
                     setSearchQuery('');
                     setActiveSidebarTab('profiles');
@@ -1048,6 +1357,7 @@ export default function App() {
                         key={person.id}
                         onClick={() => {
                           handleSelectPerson(person);
+                          handleFocusOnMap(person);
                           setGlobalSearchQuery(person.hoTen);
                           setSearchQuery('');
                           setActiveSidebarTab('profiles');
@@ -1133,14 +1443,20 @@ export default function App() {
           {/* TAB HEADER */}
           <div className="flex border-b border-slate-200 bg-slate-50 shrink-0">
             <button
+              onClick={() => setActiveSidebarTab('settings')}
+              className={`flex-1 py-3 text-[11px] font-bold uppercase tracking-wider transition-colors ${activeSidebarTab === 'settings' ? 'text-red-800 border-b-2 border-red-800 bg-white' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'}`}
+            >
+              Cài đặt
+            </button>
+            <button
               onClick={() => setActiveSidebarTab('stats')}
-              className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider transition-colors ${activeSidebarTab === 'stats' ? 'text-red-800 border-b-2 border-red-800 bg-white' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'}`}
+              className={`flex-1 py-3 text-[11px] font-bold uppercase tracking-wider transition-colors ${activeSidebarTab === 'stats' ? 'text-red-800 border-b-2 border-red-800 bg-white' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'}`}
             >
               Thống kê
             </button>
             <button
               onClick={() => setActiveSidebarTab('profiles')}
-              className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider transition-colors ${activeSidebarTab === 'profiles' ? 'text-red-800 border-b-2 border-red-800 bg-white' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'}`}
+              className={`flex-1 py-3 text-[11px] font-bold uppercase tracking-wider transition-colors ${activeSidebarTab === 'profiles' ? 'text-red-800 border-b-2 border-red-800 bg-white' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'}`}
             >
               Hồ sơ
             </button>
@@ -1175,7 +1491,7 @@ export default function App() {
                   
                   <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3 shadow-sm flex flex-col items-center justify-center text-center">
                     <div className="text-xl font-display font-bold text-emerald-700">{stats.conSong}</div>
-                    <div className="text-[10px] font-bold text-emerald-600/80 uppercase tracking-wide mt-1">Còn sống</div>
+                    <div className="text-[10px] font-bold text-emerald-600/80 uppercase tracking-wide mt-1 text-center">Hưu trí (Cựu chiến binh)</div>
                   </div>
                   
                   <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 shadow-sm flex flex-col items-center justify-center text-center">
@@ -1275,7 +1591,7 @@ export default function App() {
                             className="w-full pl-7 pr-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-red-800 appearance-none"
                           >
                             <option value="Tất cả">Tất cả</option>
-                            <option value="Còn sống">Còn sống</option>
+                            <option value="Hưu trí (Cựu chiến binh)">Hưu trí (Cựu chiến binh)</option>
                             <option value="Đang công tác">Đang công tác</option>
                             <option value="Đã mất">Đã mất (Đã chết)</option>
                           </select>
@@ -1331,7 +1647,7 @@ export default function App() {
                     </div>
                   ) : (
                     filteredData.map((person) => {
-                      const isSelected = selectedPerson?.id === person.id;
+                      const isSelected = selectedPerson?.id === person.id || actionPerson?.id === person.id;
                       
                       let badgeStyle = 'bg-red-50 text-red-800 border-red-200';
                       let indicatorColor = 'bg-red-600';
@@ -1355,18 +1671,44 @@ export default function App() {
                         >
                           <div className={`absolute left-0 top-0 bottom-0 w-1 ${indicatorColor}`} />
                           
-                          <div className="w-12 h-12 rounded-lg bg-slate-100 overflow-hidden shrink-0 border border-slate-200 flex items-center justify-center relative">
-                            <img 
-                              src={person.hinhAnh || DEFAULT_PORTRAIT_URL} 
-                              alt={person.hoTen}
-                              referrerPolicy="no-referrer"
-                              className="w-full h-full object-cover"
-                              onError={(e) => {
-                                (e.currentTarget as HTMLImageElement).src = DEFAULT_PORTRAIT_URL;
+                          {/* Left Column: Avatar + Action Buttons */}
+                          <div className="flex flex-col items-center gap-1.5 shrink-0 w-[60px]" onClick={(e) => e.stopPropagation()}>
+                            <div className="w-[60px] h-[60px] rounded-lg bg-slate-100 overflow-hidden border border-slate-200 flex items-center justify-center relative shadow-xs">
+                              <img 
+                                src={person.hinhAnh || DEFAULT_PORTRAIT_URL} 
+                                alt={person.hoTen}
+                                referrerPolicy="no-referrer"
+                                className="w-full h-full object-cover"
+                                onError={(e) => {
+                                  (e.currentTarget as HTMLImageElement).src = DEFAULT_PORTRAIT_URL;
+                                }}
+                              />
+                            </div>
+                            
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleSelectPerson(person);
                               }}
-                            />
+                              className="w-full py-1 text-[10px] font-bold rounded bg-red-800 text-amber-50 hover:bg-red-900 transition-colors shadow-xs text-center cursor-pointer"
+                              title="Xem chi tiết hồ sơ"
+                            >
+                              Chi tiết
+                            </button>
+                            
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleFocusOnMap(person);
+                              }}
+                              className="w-full py-1 text-[10px] font-bold rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors shadow-xs text-center cursor-pointer"
+                              title="Định vị vị trí trên bản đồ"
+                            >
+                              Vị trí
+                            </button>
                           </div>
 
+                          {/* Right Column: Information */}
                           <div className="flex-1 min-w-0 flex flex-col justify-center space-y-1">
                             <div className="flex items-start justify-between gap-1">
                               <h3 className="font-bold text-slate-900 group-hover:text-red-950 text-sm leading-tight truncate">
@@ -1399,6 +1741,211 @@ export default function App() {
                 </div>
               </div>
             )}
+
+            {activeSidebarTab === 'settings' && (
+              <div className="flex flex-col h-full overflow-y-auto p-4 space-y-5 animate-fade-in bg-slate-50">
+                <div className="flex items-center gap-2 border-b border-slate-200 pb-2 shrink-0">
+                  <Settings className="w-4 h-4 text-red-800" />
+                  <h2 className="text-xs font-bold text-gray-700 uppercase tracking-widest">
+                    CÀI ĐẶT CẤU HÌNH HỆ THỐNG
+                  </h2>
+                </div>
+
+                {/* 1. CONFIG DEFAULT PROFILE YEAR */}
+                <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm space-y-3">
+                  <div className="flex items-center gap-2">
+                    <Calendar className="w-4 h-4 text-red-800 shrink-0" />
+                    <h3 className="font-bold text-slate-800 text-xs uppercase tracking-wide">
+                      1. Năm lưu hồ sơ mặc định
+                    </h3>
+                  </div>
+                  
+                  <p className="text-[11px] text-slate-500 leading-relaxed">
+                    Thiết lập năm lưu hồ sơ mặc định khi lưu trữ dữ liệu. Cấu hình này chỉ phục vụ mục đích ghi nhận và đồng bộ năm lưu hồ sơ gốc, <span className="font-bold text-red-800">hoàn toàn độc lập, không liên kết</span> và không lọc dữ liệu song song của tab Thống kê.
+                  </p>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                      Năm lưu hồ sơ
+                    </label>
+                    <input
+                      type="number"
+                      placeholder="Ví dụ: 2026"
+                      value={defaultYearSetting}
+                      onChange={(e) => setDefaultYearSetting(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-red-800"
+                    />
+                  </div>
+
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      onClick={() => handleSaveDefaultYear(defaultYearSetting)}
+                      className="flex-1 py-1.5 px-3 bg-red-800 hover:bg-red-900 text-amber-100 text-xs font-bold rounded-lg transition-all shadow-sm cursor-pointer"
+                    >
+                      Lưu năm cấu hình
+                    </button>
+                    <button
+                      onClick={() => {
+                        setDefaultYearSetting('');
+                        handleSaveDefaultYear('');
+                      }}
+                      className="py-1.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium rounded-lg transition-all cursor-pointer border border-slate-200"
+                    >
+                      Đặt lại
+                    </button>
+                  </div>
+                </div>
+
+                {/* 2. CONFIG MAP CENTER */}
+                <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm space-y-3">
+                  <div className="flex items-center gap-2">
+                    <MapPin className="w-4 h-4 text-red-800 shrink-0" />
+                    <h3 className="font-bold text-slate-800 text-xs uppercase tracking-wide">
+                      2. Vị trí trung tâm bản đồ
+                    </h3>
+                  </div>
+
+                  <p className="text-[11px] text-slate-500 leading-relaxed">
+                    Thiết lập tọa độ cố định của khu vực trung tâm. Khi người dùng bấm nút <strong className="text-slate-800">Trung Tâm</strong> trên bản đồ, góc nhìn sẽ tự động di chuyển về đúng vị trí đã lưu này.
+                  </p>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                      Tọa độ hoặc Link Google Maps
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Dán link Google Maps hoặc tọa độ Lat, Lng..."
+                      value={savedCenterUrl}
+                      onChange={(e) => setSavedCenterUrl(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-red-800"
+                    />
+                  </div>
+
+                  {/* Dynamic coordinate detection feedback */}
+                  <div className="p-2.5 rounded-lg text-[10px] bg-slate-50 border border-slate-100 flex flex-col gap-1">
+                    <span className="font-bold text-slate-500 uppercase tracking-wider text-[9px]">Trạng thái nhận diện:</span>
+                    {liveParsedCenter ? (
+                      <span className="text-emerald-700 font-bold flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                        ✓ Vĩ độ: {liveParsedCenter[0].toFixed(5)} • Kinh độ: {liveParsedCenter[1].toFixed(5)}
+                      </span>
+                    ) : savedCenterUrl.trim() === '' ? (
+                      <span className="text-slate-500 italic">Chưa nhập tọa độ</span>
+                    ) : (
+                      <span className="text-red-600 font-bold flex items-center gap-1">
+                        ✗ Định dạng không hợp lệ (Hãy nhập Vĩ độ, Kinh độ)
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex flex-col gap-2 pt-1">
+                    <button
+                      onClick={handleSaveMapCenter}
+                      disabled={!liveParsedCenter}
+                      className={`w-full py-2 px-3 text-xs font-bold rounded-lg transition-all shadow-sm cursor-pointer flex items-center justify-center gap-1.5 ${
+                        liveParsedCenter 
+                          ? 'bg-red-800 hover:bg-red-900 text-amber-100' 
+                          : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                      }`}
+                    >
+                      <span>Lưu vị trí trung tâm cố định</span>
+                    </button>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        onClick={handleGetCurrentMapCenter}
+                        className="py-1.5 px-2 bg-blue-50 hover:bg-blue-100 text-blue-700 hover:text-blue-800 text-[10px] font-bold rounded-lg transition-all border border-blue-200 flex items-center justify-center gap-1"
+                        title="Lấy góc nhìn hiện tại đang hiển thị trên bản đồ của bạn làm trung tâm mới"
+                      >
+                        <Locate className="w-3.5 h-3.5" />
+                        <span>Lấy từ bản đồ</span>
+                      </button>
+                      <button
+                        onClick={handleResetMapCenter}
+                        className="py-1.5 px-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold rounded-lg transition-all border border-slate-200 flex items-center justify-center gap-1"
+                      >
+                        <RefreshCw className="w-3 h-3" />
+                        <span>Khôi phục mặc định</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. CONFIG HIDE STATUSES */}
+                <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm space-y-3">
+                  <div className="flex items-center gap-2">
+                    <EyeOff className="w-4 h-4 text-red-800 shrink-0" />
+                    <h3 className="font-bold text-slate-800 text-xs uppercase tracking-wide">
+                      3. Ẩn trạng thái hiển thị hồ sơ
+                    </h3>
+                  </div>
+
+                  <p className="text-[11px] text-slate-500 leading-relaxed">
+                    Tích chọn để ẩn các hồ sơ và điểm ghim trên bản đồ theo từng trạng thái tương ứng. Khi tích vào, hệ thống sẽ lọc bỏ trạng thái đó ra khỏi tầm hiển thị.
+                  </p>
+
+                  <div className="space-y-2.5 pt-1">
+                    <label className="flex items-center gap-2.5 p-2 rounded-lg hover:bg-slate-50 border border-slate-100 transition-colors cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={hideHuutri}
+                        onChange={(e) => {
+                          setHideHuutri(e.target.checked);
+                          localStorage.setItem('hide_huutri', String(e.target.checked));
+                        }}
+                        className="w-4 h-4 text-red-800 border-gray-300 rounded focus:ring-red-800 cursor-pointer animate-scale-up"
+                      />
+                      <div className="flex-1">
+                        <span className="text-xs font-semibold text-slate-700 block">Ẩn hồ sơ "Hưu trí / Cựu chiến binh"</span>
+                        <span className="text-[10px] text-slate-400 block mt-0.5">Ẩn toàn bộ người có công đang nghỉ hưu hoặc là cựu chiến binh</span>
+                      </div>
+                    </label>
+
+                    <label className="flex items-center gap-2.5 p-2 rounded-lg hover:bg-slate-50 border border-slate-100 transition-colors cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={hideDaMat}
+                        onChange={(e) => {
+                          setHideDaMat(e.target.checked);
+                          localStorage.setItem('hide_damat', String(e.target.checked));
+                        }}
+                        className="w-4 h-4 text-red-800 border-gray-300 rounded focus:ring-red-800 cursor-pointer animate-scale-up"
+                      />
+                      <div className="flex-1">
+                        <span className="text-xs font-semibold text-slate-700 block">Ẩn hồ sơ "Đã mất (Đã chết)"</span>
+                        <span className="text-[10px] text-slate-400 block mt-0.5">Ẩn toàn bộ người có công đã qua đời / liệt sĩ</span>
+                      </div>
+                    </label>
+
+                    <label className="flex items-center gap-2.5 p-2 rounded-lg hover:bg-slate-50 border border-slate-100 transition-colors cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={hideDangCongTac}
+                        onChange={(e) => {
+                          setHideDangCongTac(e.target.checked);
+                          localStorage.setItem('hide_dangcongtac', String(e.target.checked));
+                        }}
+                        className="w-4 h-4 text-red-800 border-gray-300 rounded focus:ring-red-800 cursor-pointer animate-scale-up"
+                      />
+                      <div className="flex-1">
+                        <span className="text-xs font-semibold text-slate-700 block">Ẩn hồ sơ "Đang công tác"</span>
+                        <span className="text-[10px] text-slate-400 block mt-0.5">Ẩn toàn bộ người có công hiện vẫn đang làm việc / công tác</span>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Settings Note */}
+                <div className="bg-amber-50 rounded-xl p-3.5 border border-amber-200/60 flex gap-2">
+                  <Info className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                  <div className="text-[10px] text-amber-800 leading-relaxed space-y-1">
+                    <p className="font-bold uppercase tracking-wider text-[9px]">Ghi chú lưu trữ:</p>
+                    <p>Các cấu hình này được lưu trực tiếp trên thiết bị của bạn (Trình duyệt LocalStorage) và sẽ tự động duy trì khi bạn tải lại trang ứng dụng.</p>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
           {/* Footer info brand */}
           <div className="p-3 bg-red-950 text-center border-t border-red-800 shrink-0">
@@ -1428,11 +1975,7 @@ export default function App() {
             <button
               onClick={() => {
                 if (mapInstance) {
-                  if (markersGroupRef.current && markersGroupRef.current.getLayers()?.length > 0) {
-                     mapInstance.fitBounds(markersGroupRef.current.getBounds(), { padding: [50, 50] });
-                  } else {
-                     mapInstance.setView([21.9863, 105.0863], 13);
-                  }
+                  mapInstance.setView(savedCenter, 14);
                 }
               }}
               title="Về trung tâm"
@@ -2282,7 +2825,7 @@ export default function App() {
                   <div>7. <strong>Tọa độ Lng</strong> (kinh độ v.d: 105.0863)</div>
                   <div>3. <strong>Diện chính sách</strong></div>
                   <div>8. <strong>Thông tin gia đình</strong></div>
-                  <div>4. <strong>Tình trạng</strong> (Còn sống/Đã mất (Đã chết))</div>
+                  <div>4. <strong>Tình trạng</strong> (Hưu trí (Cựu chiến binh)/Đã mất (Đã chết))</div>
                   <div>9. <strong>Tiểu sử và Thành tích</strong></div>
                   <div>5. <strong>Địa chỉ</strong></div>
                   <div>10. <strong>Hình ảnh</strong> (URL ảnh chân dung)</div>
@@ -2294,7 +2837,7 @@ export default function App() {
                 <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 grid grid-cols-1 sm:grid-cols-3 gap-2">
                   <div className="flex items-center gap-2">
                     <span className="relative flex h-3 w-3"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-red-600 ring-2 ring-red-200"></span></span>
-                    <span className="font-medium text-gray-700 text-[11px]">Còn sống (Đỏ)</span>
+                    <span className="font-medium text-gray-700 text-[11px]">Hưu trí / Cựu chiến binh (Đỏ)</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="relative flex h-3 w-3"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500 ring-2 ring-amber-200"></span></span>
@@ -2335,6 +2878,8 @@ export default function App() {
           </div>
         </div>
       )}
+
+
 
     </div>
   );
