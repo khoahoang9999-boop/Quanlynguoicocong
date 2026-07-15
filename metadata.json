@@ -1,0 +1,6 @@
+{
+  "name": "Bản đồ Người có công",
+  "description": "Bản đồ tương tác quản lý, hiển thị vị trí và thông tin của Người có công với cách mạng xã Hàm Yên, tỉnh Tuyên Quang.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

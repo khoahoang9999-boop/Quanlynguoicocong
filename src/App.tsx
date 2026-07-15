@@ -1,0 +1,1944 @@
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import L from 'leaflet';
+import Papa from 'papaparse';
+import * as XLSX from 'xlsx';
+import { 
+  MapPin, 
+  Search, 
+  Filter, 
+  RefreshCw, 
+  Phone, 
+  Users, 
+  Award, 
+  X, 
+  Menu, 
+  Info, 
+  Calendar, 
+  Navigation, 
+  Database,
+  ExternalLink,
+  FileSpreadsheet,
+  ChevronRight,
+  Sparkles,
+  Map as MapIcon,
+  HelpCircle,
+  Eye,
+  HeartHandshake,
+  Upload,
+  Layers,
+  Locate,
+  ArrowLeftRight
+} from 'lucide-react';
+import { NguoiCoCong } from './types';
+import { MOCK_DATA, DEFAULT_PORTRAIT_URL, parseCSVToNguoiCoCong } from './data';
+
+export default function App() {
+  // Database URL state
+  const [sheetUrl, setSheetUrl] = useState<string>(() => {
+    return localStorage.getItem('saved_sheet_url') || '';
+  });
+
+  // Main data state
+  const [data, setData] = useState<NguoiCoCong[]>(() => {
+    const saved = localStorage.getItem('saved_nguoi_co_cong_data');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        return Array.isArray(parsed) ? parsed : MOCK_DATA;
+      } catch (e) {
+        return MOCK_DATA;
+      }
+    }
+    return MOCK_DATA;
+  });
+
+  // UI state
+  const [selectedPerson, setSelectedPerson] = useState<NguoiCoCong | null>(null);
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [selectedDienChinhSach, setSelectedDienChinhSach] = useState<string>('Tất cả');
+  const [selectedTinhTrang, setSelectedTinhTrang] = useState<string>('Tất cả');
+  const [selectedMonthYear, setSelectedMonthYear] = useState<string>('');
+  const [fromDate, setFromDate] = useState<string>('');
+  const [toDate, setToDate] = useState<string>('');
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  
+  // Mobile drawers state
+  const [isSidebarOpenOnMobile, setIsSidebarOpenOnMobile] = useState<boolean>(false);
+  const [showSyncModal, setShowSyncModal] = useState<boolean>(false);
+  const [activeSidebarTab, setActiveSidebarTab] = useState<"stats" | "profiles">("stats");
+  const [showGuideModal, setShowGuideModal] = useState<boolean>(false);
+  const [showResetModal, setShowResetModal] = useState<boolean>(false);
+  const [resetFromDate, setResetFromDate] = useState<string>('');
+  const [resetToDate, setResetToDate] = useState<string>('');
+  const [resetMode, setResetMode] = useState<'all' | 'range'>('all');
+  
+  const [activeSyncTab, setActiveSyncTab] = useState<'sheets' | 'local'>('sheets');
+
+  const parseDateString = (dStr: string) => {
+    if (!dStr) return null;
+    if (dStr.includes('/')) {
+        const parts = dStr.split('/');
+        const year = parts[parts.length - 1];
+        const month = parts.length >= 2 ? parseInt(parts[parts.length - 2]).toString().padStart(2, '0') : '01';
+        const day = parts.length >= 3 ? parseInt(parts[parts.length - 3]).toString().padStart(2, '0') : '01';
+        return new Date(`${year}-${month}-${day}`);
+    } else if (dStr.includes('-')) {
+        const parts = dStr.split('-');
+        const year = parts[0];
+        const month = parts.length >= 2 ? parseInt(parts[1]).toString().padStart(2, '0') : '01';
+        const day = parts.length >= 3 ? parseInt(parts[2]).toString().padStart(2, '0') : '01';
+        return new Date(`${year}-${month}-${day}`);
+    } else {
+        const d = new Date(dStr);
+        if (!isNaN(d.getTime())) return d;
+    }
+    return null;
+  };
+
+  const executeResetData = () => {
+    let finalData = data;
+    if (resetMode === 'all') {
+      setData(MOCK_DATA);
+      setSheetUrl('');
+      localStorage.removeItem('saved_sheet_url');
+      localStorage.removeItem('saved_nguoi_co_cong_data');
+      setSuccessMsg('Đã khôi phục toàn bộ dữ liệu mẫu gốc.');
+      finalData = MOCK_DATA;
+    } else {
+      // Khôi phục theo thời gian
+      const from = resetFromDate ? new Date(resetFromDate) : null;
+      let to = resetToDate ? new Date(resetToDate) : null;
+      if (to) {
+        to.setDate(to.getDate() + 1); // Include full day
+      }
+
+      const isDateInRange = (d: Date | null) => {
+        if (!d) return false;
+        if (from && d < from) return false;
+        if (to && d >= to) return false;
+        return true;
+      };
+
+      // Giữ lại dữ liệu hiện tại KHÔNG NẰM TRONG khoảng thời gian reset
+      const remainingData = data.filter(item => {
+        const d = parseDateString(item.namDuLieu || '');
+        return !isDateInRange(d); // Keep if NOT in range
+      });
+
+      // Lấy dữ liệu gốc (MOCK_DATA) NẰM TRONG khoảng thời gian reset
+      const restoredMockData = MOCK_DATA.filter(item => {
+        const d = parseDateString(item.namDuLieu || '');
+        return isDateInRange(d); // Get if IN range
+      });
+
+      finalData = [...remainingData, ...restoredMockData];
+      setData(finalData);
+      
+      // Save to localStorage so it persists
+      localStorage.setItem('saved_nguoi_co_cong_data', JSON.stringify(finalData));
+
+      setSuccessMsg('Đã khôi phục dữ liệu gốc cho khoảng thời gian đã chọn.');
+    }
+    
+    setShowResetModal(false);
+    setTimeout(() => {
+      fitAllMarkers(finalData);
+    }, 400);
+  };
+  
+
+  // Map settings, layers and directions state
+  const [mapType, setMapType] = useState<'voyager' | 'satellite' | 'terrain'>('voyager');
+  const [mapInstance, setMapInstance] = useState<L.Map | null>(null);
+  const [googleMapsEmbedUrl, setGoogleMapsEmbedUrl] = useState<string | null>(null);
+  const [showDirections, setShowDirections] = useState<boolean>(false);
+  const [startType, setStartType] = useState<'gps' | 'person'>('gps');
+  const [startPersonId, setStartPersonId] = useState<string>('');
+  const [destPersonId, setDestPersonId] = useState<string>('');
+  const [calculatedDistance, setCalculatedDistance] = useState<number | null>(null);
+  const [gpsLoading, setGpsLoading] = useState<boolean>(false);
+  const [gpsCoords, setGpsCoords] = useState<[number, number] | null>(null);
+  const [directionInstructions, setDirectionInstructions] = useState<string[]>([]);
+
+  // Map references
+  const mapContainerRef = useRef<HTMLDivElement | null>(null);
+  const mapRef = useRef<L.Map | null>(null);
+  const tileLayerRef = useRef<L.TileLayer | null>(null);
+  const markersGroupRef = useRef<L.FeatureGroup | null>(null);
+  const markerMapRef = useRef<Map<string, L.Marker>>(new Map());
+  const routingLineRef = useRef<L.Polyline | null>(null);
+  const gpsMarkerRef = useRef<L.Marker | null>(null);
+
+  // Set default view on map or adjust bounds to match markers
+  const vietnamCenter: [number, number] = [21.9863, 105.0863]; // Viet Thanh, Ham Yen, Tuyen Quang
+
+  // Initialize Map
+  useEffect(() => {
+    if (!mapContainerRef.current) return;
+    if (mapRef.current) return;
+
+    // Initialize leaflet map
+    const map = L.map(mapContainerRef.current, {
+      zoomControl: false,
+      attributionControl: false
+    }).setView(vietnamCenter, 14);
+
+    // Custom scale & zoom placement
+    // L.control.zoom({ position: 'topright' }).addTo(map);
+    L.control.scale({ position: 'bottomleft', imperial: false }).addTo(map);
+
+    const markersGroup = L.featureGroup().addTo(map);
+
+    mapRef.current = map;
+    setMapInstance(map);
+    markersGroupRef.current = markersGroup;
+
+    // Trigger initial fitBounds if we have data
+    if (data?.length > 0) {
+      setTimeout(() => {
+        fitAllMarkers(resetMode === "all" ? MOCK_DATA : newData);
+      }, 500);
+    }
+
+    return () => {
+      if (mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current = null;
+        setMapInstance(null);
+      }
+    };
+  }, []);
+
+  // Manage map layers based on mapType state
+  useEffect(() => {
+    if (!mapInstance) return;
+
+    if (tileLayerRef.current) {
+      mapInstance.removeLayer(tileLayerRef.current);
+    }
+
+    let url = '';
+    let maxZoom = 19;
+
+    if (mapType === 'voyager') {
+      url = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
+      maxZoom = 19;
+    } else if (mapType === 'satellite') {
+      url = 'https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}'; // Google Satellite Hybrid (imagery + labels)
+      maxZoom = 21;
+    } else if (mapType === 'terrain') {
+      url = 'https://mt1.google.com/vt/lyrs=p&x={x}&y={y}&z={z}'; // Google Terrain
+      maxZoom = 21;
+    }
+
+    const options: L.TileLayerOptions = {
+      maxZoom,
+      attribution: mapType === 'voyager' ? '© OpenStreetMap, © CartoDB' : '© Google Maps'
+    };
+    if (mapType === 'voyager') {
+      options.subdomains = 'abcd';
+    }
+    const tileLayer = L.tileLayer(url, options);
+
+    tileLayer.addTo(mapInstance);
+    tileLayerRef.current = tileLayer;
+  }, [mapInstance, mapType]);
+
+  // Haversine formula helper
+  const getHaversineDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+    const R = 6371; // Earth radius in km
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = 
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  };
+
+  // Bearing text helper
+  const getBearingText = (lat1: number, lon1: number, lat2: number, lon2: number): string => {
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const lat1Rad = lat1 * Math.PI / 180;
+    const lat2Rad = lat2 * Math.PI / 180;
+    
+    const y = Math.sin(dLon) * Math.cos(lat2Rad);
+    const x = Math.cos(lat1Rad) * Math.sin(lat2Rad) -
+              Math.sin(lat1Rad) * Math.cos(lat2Rad) * Math.cos(dLon);
+    let brng = Math.atan2(y, x) * 180 / Math.PI;
+    brng = (brng + 360) % 360;
+    
+    const directions = ['Bắc', 'Đông Bắc', 'Đông', 'Đông Nam', 'Nam', 'Tây Nam', 'Tây', 'Tây Bắc'];
+    const index = Math.round(brng / 45) % 8;
+    return directions[index];
+  };
+
+  // Find current GPS location of the user
+  const detectGPSLocation = () => {
+    if (!navigator.geolocation) {
+      alert('Trình duyệt của bạn không hỗ trợ định vị GPS.');
+      return;
+    }
+    setGpsLoading(true);
+    setError(null);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const coords: [number, number] = [position.coords.latitude, position.coords.longitude];
+        setGpsCoords(coords);
+        setGpsLoading(false);
+        
+        // Add or update GPS marker on map
+        if (mapInstance) {
+          if (gpsMarkerRef.current) {
+            mapInstance.removeLayer(gpsMarkerRef.current);
+          }
+          
+          const gpsIcon = L.divIcon({
+            html: `<div class="relative flex items-center justify-center">
+                    <span class="animate-ping absolute inline-flex h-6 w-6 rounded-full bg-blue-400 opacity-75"></span>
+                    <span class="relative inline-flex rounded-full h-4 h-4 bg-blue-600 border-2 border-white shadow-md"></span>
+                   </div>`,
+            className: '',
+            iconSize: [24, 24],
+            iconAnchor: [12, 12]
+          });
+          
+          const marker = L.marker(coords, { icon: gpsIcon })
+            .addTo(mapInstance)
+            .bindPopup('<b class="text-blue-600">Vị trí hiện tại của bạn</b>')
+            .openPopup();
+            
+          gpsMarkerRef.current = marker;
+          mapInstance.setView(coords, 15);
+        }
+      },
+      (err) => {
+        setGpsLoading(false);
+        console.error(err ? err.message || err : 'Lỗi định vị');
+        alert('Không thể xác định vị trí GPS của bạn. Vui lòng cấp quyền truy cập vị trí hoặc chọn điểm xuất phát từ danh sách.');
+      },
+      { enableHighAccuracy: true, timeout: 8000 }
+    );
+  };
+
+  // Draw the route line and update instructions
+  const drawRouteLine = () => {
+    if (!mapInstance) return;
+
+    // Clear existing routing line
+    if (routingLineRef.current) {
+      mapInstance.removeLayer(routingLineRef.current);
+      routingLineRef.current = null;
+    }
+
+    let startLat = 0;
+    let startLng = 0;
+    let startName = '';
+
+    if (startType === 'gps') {
+      if (!gpsCoords) {
+        alert('Vui lòng bật định vị GPS trước bằng cách bấm vào biểu tượng Vị trí của tôi.');
+        return;
+      }
+      startLat = gpsCoords[0];
+      startLng = gpsCoords[1];
+      startName = 'Vị trí hiện tại của bạn';
+    } else {
+      const startP = data.find(p => p.id === startPersonId);
+      if (!startP) {
+        alert('Vui lòng chọn người có công xuất phát.');
+        return;
+      }
+      startLat = startP.lat;
+      startLng = startP.lng;
+      startName = startP.hoTen;
+    }
+
+    const destP = data.find(p => p.id === destPersonId);
+    if (!destP) {
+      alert('Vui lòng chọn người có công đích đến.');
+      return;
+    }
+    const destLat = destP.lat;
+    const destLng = destP.lng;
+    const destName = destP.hoTen;
+
+    // Calculate straight line distance (Haversine)
+    const dist = getHaversineDistance(startLat, startLng, destLat, destLng);
+    setCalculatedDistance(dist);
+
+    // Draw route line (dashed, glowing, modern look)
+    const latlngs: [number, number][] = [
+      [startLat, startLng],
+      [destLat, destLng]
+    ];
+
+    const polyline = L.polyline(latlngs, {
+      color: '#2563eb', // Blue-600
+      weight: 4,
+      dashArray: '8, 8',
+      opacity: 0.85
+    }).addTo(mapInstance);
+
+    routingLineRef.current = polyline;
+
+    // Fit map bounds to show the entire route
+    mapInstance.fitBounds(polyline.getBounds(), { padding: [60, 60] });
+
+    // Generate smart instructions text
+    const distText = dist < 1 ? `${Math.round(dist * 1000)} m` : `${dist.toFixed(2)} km`;
+    const heading = getBearingText(startLat, startLng, destLat, destLng);
+
+    const instructions = [
+      `Điểm xuất phát: ${startName}`,
+      `Điểm đến: ${destName} (${destP.dienChinhSach})`,
+      `Khoảng cách đường thẳng ước tính: ${distText}`,
+      `Hướng di chuyển chính: Hướng ${heading}`,
+      `Hành trình đi qua địa bàn xã Hàm Yên, huyện Hàm Yên, tỉnh Tuyên Quang.`,
+      `Gợi ý: Nhấp vào nút "Mở Google Maps" bên dưới để nhận chỉ đường giao thông chi tiết (ô tô, xe máy, đi bộ).`
+    ];
+    setDirectionInstructions(instructions);
+  };
+
+  // Clear directions and route line
+  const clearRouteLine = () => {
+    if (routingLineRef.current && mapInstance) {
+      mapInstance.removeLayer(routingLineRef.current);
+      routingLineRef.current = null;
+    }
+    if (gpsMarkerRef.current && mapInstance) {
+      mapInstance.removeLayer(gpsMarkerRef.current);
+      gpsMarkerRef.current = null;
+    }
+    setCalculatedDistance(null);
+    setGpsCoords(null);
+    setDirectionInstructions([]);
+  };
+
+  // Sync / Load spreadsheet data
+  const handleSync = async (urlToSync: string) => {
+    if (!urlToSync) {
+      setError('Vui lòng nhập đường dẫn Google Sheets CSV hợp lệ.');
+      return;
+    }
+    
+    setIsLoading(true);
+    setError(null);
+    setSuccessMsg(null);
+
+    try {
+      const response = await fetch(urlToSync);
+      if (!response.ok) {
+        throw new Error('Không thể kết nối đến tệp dữ liệu. Vui lòng kiểm tra lại URL và quyền chia sẻ.');
+      }
+      const csvText = await response.text();
+
+      Papa.parse(csvText, {
+        header: true,
+        skipEmptyLines: true,
+        complete: (results) => {
+          if (results.data && results.data?.length > 0) {
+            const parsed = parseCSVToNguoiCoCong(results.data);
+            if (parsed?.length === 0) {
+              setError('Kết nối thành công nhưng cấu trúc các cột (headers) không khớp với tiêu chuẩn. Vui lòng tải dữ liệu đúng cấu trúc.');
+              setIsLoading(false);
+            } else {
+              setData(parsed);
+              localStorage.setItem('saved_sheet_url', urlToSync);
+              localStorage.setItem('saved_nguoi_co_cong_data', JSON.stringify(parsed));
+              setSuccessMsg(`Đồng bộ thành công! Đã cập nhật thông tin của ${parsed?.length} người có công.`);
+              setShowSyncModal(false);
+              setIsLoading(false);
+              
+              // Fit map bounds to new markers
+              setTimeout(() => {
+                fitAllMarkers(parsed);
+              }, 400);
+            }
+          } else {
+            setError('File dữ liệu trống hoặc định dạng không đúng.');
+            setIsLoading(false);
+          }
+        },
+        error: (err) => {
+          setError(`Lỗi phân tích dữ liệu: ${err.message}`);
+          setIsLoading(false);
+        }
+      });
+    } catch (err: any) {
+      setError(err.message || 'Lỗi bất định khi kết nối với Google Sheets.');
+      setIsLoading(false);
+    }
+  };
+
+  // Upload local Excel (.xlsx, .xls) or CSV
+  const handleExcelUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsLoading(true);
+    setError(null);
+    setSuccessMsg(null);
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        const rawData = XLSX.utils.sheet_to_json(ws);
+
+        if (rawData && rawData?.length > 0) {
+          const parsed = parseCSVToNguoiCoCong(rawData);
+          if (parsed?.length === 0) {
+            setError('Đọc tệp thành công nhưng cấu trúc các cột không khớp với tiêu chuẩn. Vui lòng kiểm tra dòng tiêu đề (headers) tiếng Việt của tệp.');
+            setIsLoading(false);
+          } else {
+            setData(parsed);
+            localStorage.setItem('saved_nguoi_co_cong_data', JSON.stringify(parsed));
+            setSuccessMsg(`Đồng bộ thành công từ tệp cục bộ! Đã cập nhật thông tin của ${parsed?.length} người có công.`);
+            setShowSyncModal(false);
+            setIsLoading(false);
+            
+            // Fit map bounds to new markers
+            setTimeout(() => {
+              fitAllMarkers(parsed);
+            }, 400);
+          }
+        } else {
+          setError('Tệp trống hoặc định dạng không đúng.');
+          setIsLoading(false);
+        }
+      } catch (err: any) {
+        setError(`Lỗi xử lý tệp: ${err.message}`);
+        setIsLoading(false);
+      }
+    };
+    reader.onerror = () => {
+      setError('Lỗi đọc tập tin.');
+      setIsLoading(false);
+    };
+    reader.readAsBinaryString(file);
+  };
+
+  // Reset to default mock data
+  
+  // Dynamic filter lists
+  const listDienChinhSach = useMemo(() => {
+    const list = new Set<string>();
+    data.forEach(item => {
+      if (item.dienChinhSach) {
+        list.add(item.dienChinhSach);
+      }
+    });
+    return ['Tất cả', ...Array.from(list)];
+  }, [data]);
+
+    
+
+  
+
+  // Compute filtered items
+  const filteredData = useMemo(() => {
+    return (data || []).filter((item) => {
+      const matchSearch = 
+        item.hoTen.toLowerCase().includes(searchQuery.toLowerCase()) || 
+        item.diaChi.toLowerCase().includes(searchQuery.toLowerCase());
+      
+      const matchDien = selectedDienChinhSach === 'Tất cả' || item.dienChinhSach === selectedDienChinhSach;
+      const matchTinhTrang = selectedTinhTrang === 'Tất cả' || item.tinhTrang === selectedTinhTrang;
+      const matchTime = (() => {
+        let matchesMonth = true;
+        let itemDate = null;
+        const dStr = item.namDuLieu || '';
+        
+        // Parse date for range comparison
+        if (dStr.includes('/')) {
+            const parts = dStr.split('/');
+            const year = parts[parts.length - 1];
+            const month = parts.length >= 2 ? parseInt(parts[parts.length - 2]).toString().padStart(2, '0') : '01';
+            const day = parts.length >= 3 ? parseInt(parts[parts.length - 3]).toString().padStart(2, '0') : '01';
+            itemDate = new Date(`${year}-${month}-${day}`);
+        } else if (dStr.includes('-')) {
+            const parts = dStr.split('-');
+            const year = parts[0];
+            const month = parts.length >= 2 ? parseInt(parts[1]).toString().padStart(2, '0') : '01';
+            const day = parts.length >= 3 ? parseInt(parts[2]).toString().padStart(2, '0') : '01';
+            itemDate = new Date(`${year}-${month}-${day}`);
+        } else {
+            const d = new Date(dStr);
+            if (!isNaN(d.getTime())) {
+                itemDate = d;
+            }
+        }
+
+        // Check month/year if selected
+        if (selectedMonthYear) {
+            const [targetYear, targetMonth] = selectedMonthYear.split('-');
+            let itemYear = '';
+            let itemMonth = '';
+            
+            if (itemDate && !isNaN(itemDate.getTime())) {
+                itemYear = itemDate.getFullYear().toString();
+                itemMonth = (itemDate.getMonth() + 1).toString().padStart(2, '0');
+            } else if (dStr.match(/\b(20\d{2})\b/)) {
+                itemYear = dStr.match(/\b(20\d{2})\b/)[1];
+            }
+            matchesMonth = itemYear === targetYear && itemMonth === targetMonth;
+        }
+
+        // Check from/to date range
+        return matchesMonth;
+      })();
+
+      return matchSearch && matchDien && matchTinhTrang && matchTime;
+    });
+  }, [data, searchQuery, selectedDienChinhSach, selectedTinhTrang, selectedMonthYear]);
+
+  // Dashboard Statistics
+  const stats = useMemo(() => {
+    const total = (data || [])?.length;
+    const conSong = (data || []).filter(item => item.tinhTrang === 'Còn sống')?.length;
+    const dangCongTac = (data || []).filter(item => item.tinhTrang === 'Đang công tác')?.length;
+    const daMat = (data || []).filter(item => item.tinhTrang === 'Đã mất (Đã chết)')?.length;
+    return { total, conSong, dangCongTac, daMat };
+  }, [data]);
+
+  // Map automatic fitting helper
+  const fitAllMarkers = (points: NguoiCoCong[]) => {
+    if (!mapRef.current || !markersGroupRef.current || points?.length === 0) return;
+    try {
+      const bounds = L.latLngBounds(points.map(p => [p.lat, p.lng]));
+      mapRef.current.fitBounds(bounds, { padding: [50, 50], maxZoom: 16 });
+    } catch (e) {
+      console.error("Fit bounds failed:", e);
+    }
+  };
+
+  // Helper to create custom Marker icons with dynamic color based on status
+  const createMarkerIcon = (person: NguoiCoCong, isSelected: boolean) => {
+    let colorClass = 'bg-red-600 border-red-100 text-white';
+    let ringClass = 'ring-red-400/50';
+    let pulseClass = 'marker-pulse-red';
+    let iconSymbol = '★';
+
+    if (person.tinhTrang === 'Đã mất (Đã chết)') {
+      colorClass = 'bg-slate-500 border-slate-200 text-slate-100';
+      ringClass = 'ring-slate-300/50';
+      pulseClass = ''; // No pulse animation for deceased heroes
+      iconSymbol = '🕯';
+    } else if (person.tinhTrang === 'Đang công tác') {
+      colorClass = 'bg-amber-500 border-amber-100 text-amber-950';
+      ringClass = 'ring-amber-300/50';
+      pulseClass = 'marker-pulse-amber';
+      iconSymbol = '💼';
+    }
+
+    const scaleClass = isSelected 
+      ? 'scale-125 z-[999] shadow-red-950/40 ring-4 ring-yellow-400 border-yellow-300' 
+      : 'scale-100 hover:scale-110';
+      
+    const innerHtml = person.hinhAnh && person.hinhAnh !== ''
+      ? `<img src="${person.hinhAnh}" class="w-full h-full object-cover rounded-full relative z-10" alt="${person.hoTen}" onerror="this.onerror=null; this.parentElement.innerHTML='<span class=\'text-xs font-semibold leading-none relative z-10\'>${iconSymbol}</span>';" />`
+      : `<span class="text-xs font-semibold leading-none relative z-10">${iconSymbol}</span>`;
+      
+    const pingHtml = ''; // Removed in favor of CSS pulseClass
+
+    return L.divIcon({
+      html: `
+        <div class="relative flex items-center justify-center w-10 h-10 rounded-full border-2 shadow-md transition-all duration-300 ${colorClass} ${ringClass} ${scaleClass} ${pulseClass}">
+          ${innerHtml}
+        </div>
+      `,
+      className: 'custom-leaflet-icon-container !bg-transparent !border-0',
+      iconSize: [40, 40],
+      iconAnchor: [20, 20],
+      popupAnchor: [0, -20]
+    });
+  };
+
+  // Re-render markers on Map when filteredData changes
+  useEffect(() => {
+    if (!mapRef.current || !markersGroupRef.current) return;
+
+    // Clear existing layers
+    markersGroupRef.current.clearLayers();
+    markerMapRef.current.clear();
+
+    // Re-draw filtered markers
+    filteredData.forEach((person) => {
+      const isSelected = selectedPerson?.id === person.id;
+      const marker = L.marker([person.lat, person.lng], {
+        icon: createMarkerIcon(person, isSelected)
+      });
+
+      // Simple Leaflet popup
+      const popupContent = document.createElement('div');
+      popupContent.className = 'p-3 font-sans w-64';
+      popupContent.innerHTML = `
+        <div class="flex flex-col gap-1.5">
+          <div class="flex items-start justify-between gap-1">
+            <h4 class="font-bold text-gray-900 text-sm leading-tight">${person.hoTen}</h4>
+            <span class="px-1.5 py-0.5 rounded text-[9px] font-bold shrink-0 uppercase tracking-wide ${
+              person.tinhTrang === 'Đã mất (Đã chết)' ? 'bg-slate-100 text-slate-700 border border-slate-300' :
+              person.tinhTrang === 'Đang công tác' ? 'bg-amber-100 text-amber-800 border border-amber-200' :
+              'bg-red-50 text-red-700 border border-red-200'
+            }">${person.tinhTrang}</span>
+          </div>
+          <div class="text-[11px] text-gray-600 space-y-1">
+            <div class="flex items-center gap-1">
+              <span class="font-medium text-gray-800">Năm sinh:</span> ${person.namSinh}
+            </div>
+            <div class="flex items-center gap-1">
+              <span class="font-medium text-gray-800">Đối tượng:</span> ${person.dienChinhSach}
+            </div>
+            <div class="truncate">
+              <span class="font-medium text-gray-800">Địa chỉ:</span> ${person.diaChi}
+            </div>
+          </div>
+          <button id="view-pop-${person.id}" class="mt-2 w-full bg-red-900 hover:bg-red-800 text-amber-100 text-[10px] font-semibold py-1.5 px-2.5 rounded transition-all duration-200 flex items-center justify-center gap-1 uppercase tracking-wider cursor-pointer">
+            Chi Tiết Hồ Sơ ➔
+          </button>
+        </div>
+      `;
+
+      marker.bindPopup(popupContent, {
+        closeButton: true,
+        autoPan: true
+      });
+
+      // Bind listener to custom button in Popup
+      marker.on('popupopen', () => {
+        const btn = document.getElementById(`view-pop-${person.id}`);
+        if (btn) {
+          btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            setSelectedPerson(person);
+            if (window.innerWidth < 768) {
+              setIsSidebarOpenOnMobile(false);
+            }
+          });
+        }
+      });
+
+      marker.on('click', () => {
+        setSelectedPerson(person);
+      });
+
+      markersGroupRef.current?.addLayer(marker);
+      markerMapRef.current.set(person.id, marker);
+    });
+
+    // Adjust zoom if multiple markers are shown
+    if (filteredData?.length > 0 && mapRef.current) {
+      const bounds = markersGroupRef.current.getBounds();
+      // If single item, center and zoom in
+      if (filteredData?.length === 1) {
+        mapRef.current.setView([filteredData[0].lat, filteredData[0].lng], 16);
+      } else {
+        mapRef.current.fitBounds(bounds, { padding: [40, 40], maxZoom: 16 });
+      }
+    }
+  }, [filteredData]);
+
+  // Selection trigger: Zoom map & Open Popup
+  const handleSelectPerson = (person: NguoiCoCong) => {
+    setSelectedPerson(person);
+    if (mapRef.current) {
+      mapRef.current.setView([person.lat, person.lng], 16);
+      
+      const marker = markerMapRef.current.get(person.id);
+      if (marker) {
+        setTimeout(() => {
+          marker.openPopup();
+        }, 150);
+      }
+    }
+
+    // Auto-close mobile drawer
+    if (window.innerWidth < 768) {
+      setIsSidebarOpenOnMobile(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col h-screen w-screen bg-slate-50 overflow-hidden font-sans text-gray-800">
+      
+      {/* GLOBAL HEADER */}
+      <header className="bg-gradient-to-r from-red-950 via-red-900 to-red-950 border-b-2 border-[#D4AF37] shadow-xl text-white py-3 px-4 md:px-6 z-[1000] shrink-0">
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-3">
+          
+          {/* Logo & Title */}
+          <div className="flex items-center gap-3">
+            <div className="bg-amber-400 text-red-950 rounded-full w-10 h-10 flex items-center justify-center font-bold text-lg shadow-inner shadow-red-900/60 border-2 border-yellow-300 animate-pulse shrink-0">
+              ★
+            </div>
+            <div>
+              <h1 className="text-sm md:text-lg font-bold font-display tracking-wide uppercase text-amber-200 flex items-center gap-1.5">
+                Bản đồ thông tin người có công với cách mạng
+              </h1>
+              <p className="text-[10px] md:text-xs text-red-100 font-medium">
+                Quản lý số hóa dữ liệu địa lý • Xã Hàm Yên, tỉnh Tuyên Quang
+              </p>
+            </div>
+          </div>
+
+          {/* Sync & Toolbar Buttons */}
+          <div className="flex items-center gap-2 self-end md:self-auto">
+            <button
+              onClick={() => setShowGuideModal(true)}
+              className="flex items-center gap-1 bg-red-800/60 hover:bg-red-800 text-amber-200 text-xs font-semibold py-1.5 px-3 rounded-lg border border-red-700/50 transition-all cursor-pointer"
+            >
+              <HelpCircle className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Hướng dẫn</span>
+            </button>
+            <button
+              onClick={() => setShowSyncModal(true)}
+              className="flex items-center gap-1 bg-[#D4AF37] hover:bg-amber-500 text-red-950 text-xs font-bold py-1.5 px-3 rounded-lg border border-yellow-300 shadow-md transition-all cursor-pointer"
+            >
+              <Database className="w-3.5 h-3.5" />
+              <span>Đồng bộ Sheets</span>
+            </button>
+            
+            
+            <button 
+              onClick={() => setShowResetModal(true)}
+              title="Khôi phục dữ liệu gốc"
+              className="p-1.5 bg-red-800/40 hover:bg-red-800 text-red-100 rounded-lg border border-red-700/50 transition-all flex items-center gap-1"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline text-xs font-semibold">Khôi phục</span>
+            </button>
+          </div>
+
+        </div>
+      </header>
+
+      {/* SUCCESS & ERROR TOASTS */}
+      {successMsg && (
+        <div className="bg-emerald-50 border-b border-emerald-200 text-emerald-800 px-4 py-2 text-xs font-medium flex items-center justify-between z-[999] animate-fade-in shrink-0">
+          <div className="flex items-center gap-2">
+            <span className="p-1 bg-emerald-500 text-white rounded-full text-[8px]">✓</span>
+            <span>{successMsg}</span>
+          </div>
+          <button onClick={() => setSuccessMsg(null)} className="text-emerald-500 hover:text-emerald-700">
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+      {error && (
+        <div className="bg-rose-50 border-b border-rose-200 text-rose-800 px-4 py-2 text-xs font-medium flex items-center justify-between z-[999] animate-fade-in shrink-0">
+          <div className="flex items-center gap-2">
+            <span className="p-1 bg-rose-500 text-white rounded-full text-[8px] font-bold">!</span>
+            <span>{error}</span>
+          </div>
+          <button onClick={() => setError(null)} className="text-rose-500 hover:text-rose-700">
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* MAIN CONTAINER */}
+      <div className="flex flex-1 relative overflow-hidden">
+        
+        {/* SIDEBAR PANEL (Desktop fixed left, Mobile sliding drawer) */}
+        <aside className={`
+          absolute md:static top-0 bottom-0 left-0 w-80 md:w-96 bg-white border-r border-slate-200 flex flex-col h-full z-[1010] shadow-2xl md:shadow-none transition-transform duration-300 ease-in-out
+          ${isSidebarOpenOnMobile ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+        `}>
+          {/* TAB HEADER */}
+          <div className="flex border-b border-slate-200 bg-slate-50 shrink-0">
+            <button
+              onClick={() => setActiveSidebarTab('stats')}
+              className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider transition-colors ${activeSidebarTab === 'stats' ? 'text-red-800 border-b-2 border-red-800 bg-white' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'}`}
+            >
+              Thống kê
+            </button>
+            <button
+              onClick={() => setActiveSidebarTab('profiles')}
+              className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider transition-colors ${activeSidebarTab === 'profiles' ? 'text-red-800 border-b-2 border-red-800 bg-white' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'}`}
+            >
+              Hồ sơ
+            </button>
+          </div>
+
+          
+          {/* Dashboard mini-widgets */}
+                    <div className="flex-1 overflow-y-auto flex flex-col relative">
+            {activeSidebarTab === 'stats' && (
+              <div className="p-4 space-y-4">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-xs font-bold text-gray-500 uppercase tracking-widest flex items-center gap-1">
+                <Sparkles className="w-3.5 h-3.5 text-amber-500" /> THỐNG KÊ DỮ LIỆU
+              </h2>
+              {isSidebarOpenOnMobile && (
+                <button 
+                  onClick={() => setIsSidebarOpenOnMobile(false)}
+                  className="md:hidden p-1 text-gray-400 hover:text-gray-600 bg-white rounded border border-slate-200"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+            
+            {/* Stats grid */}
+            <div className="space-y-2">
+              <div className="grid grid-cols-2 gap-2">
+                <div className="bg-white border border-slate-200 rounded-lg p-2.5 shadow-sm text-center">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Tổng số hồ sơ</p>
+                  <p className="text-xl font-extrabold text-red-950 mt-0.5">{stats.total}</p>
+                </div>
+                <div className="bg-slate-100 border border-slate-200 rounded-lg p-2.5 shadow-sm text-center">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Đã từ trần</p>
+                  <p className="text-xl font-extrabold text-slate-700 mt-0.5">{stats.daMat}</p>
+                </div>
+              </div>
+              
+              <div className="bg-emerald-50/60 border border-emerald-100 rounded-lg p-2.5 shadow-sm">
+                <div className="flex justify-between items-center border-b border-emerald-100/50 pb-1.5 mb-1.5">
+                  <p className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse inline-block" />
+                    Hiện đang sinh sống
+                  </p>
+                  <p className="text-lg font-extrabold text-emerald-700">{stats.conSong + stats.dangCongTac}</p>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-center">
+                  <div className="bg-white/80 rounded p-1.5 border border-emerald-100/20">
+                    <p className="text-slate-500 text-[9px] font-medium">Hưu trí / Tuổi già</p>
+                    <p className="font-extrabold text-slate-800 text-xs mt-0.5">{stats.conSong}</p>
+                  </div>
+                  <div className="bg-white/80 rounded p-1.5 border border-emerald-100/20">
+                    <p className="text-slate-500 text-[9px] font-medium">Đang công tác</p>
+                    <p className="font-extrabold text-slate-800 text-xs mt-0.5">{stats.dangCongTac}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+              
+            )}
+            
+            {activeSidebarTab === 'profiles' && (
+              <div className="flex flex-col h-full absolute inset-0">
+                {/* Search and Filters panel */}
+          <div className="p-4 border-b border-slate-100 bg-white space-y-3 shrink-0">
+            {/* Search Input */}
+            <div className="relative">
+              <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Tìm họ tên hoặc địa chỉ..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-800 focus:bg-white transition-all"
+              />
+              {searchQuery && (
+                <button 
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 text-xs"
+                >
+                  Xóa
+                </button>
+              )}
+            </div>
+
+            {/* Filters grid */}
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1 md:col-span-2 lg:col-span-1">
+                <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Thời gian dữ liệu</label>
+                <div className="relative">
+                  <Calendar className="absolute left-2 top-2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+                  <input
+                    type="month"
+                    value={selectedMonthYear}
+                    onChange={(e) => setSelectedMonthYear(e.target.value)}
+                    className="w-full pl-7 pr-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-red-800"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Tình trạng</label>
+                <div className="relative">
+                  <Eye className="absolute left-2 top-2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+                  <select
+                    value={selectedTinhTrang}
+                    onChange={(e) => setSelectedTinhTrang(e.target.value)}
+                    className="w-full pl-7 pr-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-red-800 appearance-none"
+                  >
+                    <option value="Tất cả">Tất cả</option>
+                    <option value="Còn sống">Còn sống</option>
+                    <option value="Đang công tác">Đang công tác</option>
+                    <option value="Đã mất">Đã mất (Đã chết)</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {/* Clear Filters Indicator */}
+            {(selectedDienChinhSach !== 'Tất cả' || selectedTinhTrang !== 'Tất cả' || selectedMonthYear !== '' || searchQuery) && (
+              <div className="flex justify-between items-center text-[11px] text-red-800 bg-red-50 p-1.5 rounded-md border border-red-100">
+                <span>Đang lọc: Tìm thấy {filteredData?.length} kết quả</span>
+                <button 
+                  onClick={() => {
+                    setSelectedDienChinhSach('Tất cả');
+                    setSelectedTinhTrang('Tất cả');
+                    setSelectedMonthYear('');
+                    setSearchQuery('');
+                  }}
+                  className="font-bold underline uppercase tracking-wider text-[9px] hover:text-red-950"
+                >
+                  Đặt lại lọc
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Results List */}
+                <div className="flex-1 overflow-y-auto bg-slate-50 p-3 space-y-2">
+            {filteredData?.length === 0 ? (
+              <div className="py-12 px-4 text-center bg-white rounded-xl border border-slate-200">
+                <MapPin className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                <p className="text-sm font-semibold text-slate-500">Không tìm thấy người có công nào</p>
+                <p className="text-xs text-slate-400 mt-1">Vui lòng thay đổi từ khóa hoặc bộ lọc của bạn.</p>
+              </div>
+            ) : (
+              filteredData.map((person) => {
+                const isSelected = selectedPerson?.id === person.id;
+                
+                // Color mapping for layout borders and badges
+                let badgeStyle = 'bg-red-50 text-red-800 border-red-200';
+                let indicatorColor = 'bg-red-600';
+                
+                if (person.tinhTrang === 'Đã mất (Đã chết)') {
+                  badgeStyle = 'bg-slate-100 text-slate-700 border-slate-200';
+                  indicatorColor = 'bg-slate-500';
+                } else if (person.tinhTrang === 'Đang công tác') {
+                  badgeStyle = 'bg-amber-50 text-amber-800 border-amber-200';
+                  indicatorColor = 'bg-amber-500';
+                }
+
+                return (
+                  <div
+                    key={person.id}
+                    onClick={() => handleSelectPerson(person)}
+                    className={`
+                      p-3 rounded-lg border bg-white transition-all duration-200 cursor-pointer flex gap-3 group hover:shadow-md hover:border-red-800/40 relative overflow-hidden
+                      ${isSelected ? 'border-red-800 ring-2 ring-red-800/10 shadow-md bg-red-50/10' : 'border-slate-200'}
+                    `}
+                  >
+                    {/* Status side indicator bar */}
+                    <div className={`absolute left-0 top-0 bottom-0 w-1 ${indicatorColor}`} />
+
+                    {/* Left avatar placeholder */}
+                    <div className="w-12 h-12 rounded-lg bg-slate-100 overflow-hidden shrink-0 border border-slate-200 flex items-center justify-center relative">
+                      <img 
+                        src={person.hinhAnh || DEFAULT_PORTRAIT_URL} 
+                        alt={person.hoTen}
+                        referrerPolicy="no-referrer"
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          // fallback
+                          (e.currentTarget as HTMLImageElement).src = DEFAULT_PORTRAIT_URL;
+                        }}
+                      />
+                    </div>
+
+                    {/* Right text content */}
+                    <div className="flex-1 min-w-0 space-y-1">
+                      <div className="flex items-start justify-between gap-1">
+                        <h3 className="font-bold text-slate-900 group-hover:text-red-950 text-sm leading-tight truncate">
+                          {person.hoTen}
+                        </h3>
+                        <span className="text-[10px] text-slate-400 shrink-0 font-medium font-mono">
+                          {person.namSinh}
+                        </span>
+                      </div>
+
+                      <p className="text-[11px] text-slate-500 truncate">
+                        {person.dienChinhSach}
+                      </p>
+
+                      <div className="flex flex-wrap items-center justify-between gap-1 pt-1 border-t border-slate-100/60">
+                        <span className="text-[11px] text-slate-400 truncate max-w-[140px] flex items-center gap-0.5">
+                          <MapPin className="w-3 h-3 text-red-800" /> {person.diaChi.split(',')[0]}
+                        </span>
+                        
+                        <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold border ${badgeStyle}`}>
+                          {person.tinhTrang}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+              </div>
+            )}
+          </div>
+          {/* Footer info brand */}
+          <div className="p-3 bg-red-950 text-center border-t border-red-800 shrink-0">
+            <span className="text-[10px] text-amber-200 tracking-wider font-semibold uppercase flex items-center justify-center gap-1">
+              <HeartHandshake className="w-3 h-3" /> Đền ơn đáp nghĩa • Uống nước nhớ nguồn
+            </span>
+          </div>
+
+</aside>
+
+        {/* MAP CONTAINER (Renders the map) */}
+        <div className="flex-1 relative h-full w-full">
+          
+          {/* Map canvas element */}
+          <div ref={mapContainerRef} className="w-full h-full z-10" />
+
+          {/* Floating toggle sidebar button for mobile */}
+          <button
+            onClick={() => setIsSidebarOpenOnMobile(!isSidebarOpenOnMobile)}
+            className="md:hidden absolute top-4 left-4 p-3 bg-red-950 text-amber-200 rounded-full border border-[#D4AF37] shadow-xl z-20 hover:bg-red-900 transition-all cursor-pointer"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+
+          {/* Map Controls: Center, Map Type, Directions */}
+          <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-20 flex flex-row gap-1 bg-white/95 backdrop-blur-md p-1.5 rounded-xl border border-slate-200 shadow-2xl">
+            <button
+              onClick={() => {
+                if (mapInstance) {
+                  if (markersGroupRef.current && markersGroupRef.current.getLayers()?.length > 0) {
+                     mapInstance.fitBounds(markersGroupRef.current.getBounds(), { padding: [50, 50] });
+                  } else {
+                     mapInstance.setView([21.9863, 105.0863], 13);
+                  }
+                }
+              }}
+              title="Về trung tâm"
+              className="px-3 h-9 rounded-lg transition-all flex flex-row items-center justify-center gap-1.5 cursor-pointer text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+            >
+              <Locate className="w-4 h-4" />
+              <span className="text-[10px] font-bold uppercase leading-tight">Trung Tâm</span>
+            </button>
+            <button
+              onClick={() => setMapType('voyager')}
+              title="Bản đồ đường"
+              className={`px-3 h-9 rounded-lg transition-all flex flex-row items-center justify-center gap-1.5 cursor-pointer ${mapType === 'voyager' ? 'bg-red-800 text-amber-200 shadow-inner' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'}`}
+            >
+              <MapIcon className="w-4 h-4" />
+              <span className="text-[10px] font-bold uppercase leading-tight">Bản đồ</span>
+            </button>
+            <button
+              onClick={() => setMapType('terrain')}
+              title="Bản đồ địa hình"
+              className={`px-3 h-9 rounded-lg transition-all flex flex-row items-center justify-center gap-1.5 cursor-pointer ${mapType === 'terrain' ? 'bg-red-800 text-amber-200 shadow-inner' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'}`}
+            >
+              <Layers className="w-4 h-4" />
+              <span className="text-[10px] font-bold uppercase leading-tight">Địa hình</span>
+            </button>
+            
+            <div className="w-px bg-slate-200 my-1.5 mx-0.5"></div> {/* Divider */}
+            
+            <button
+              onClick={() => {
+                setShowDirections(!showDirections);
+                if (!showDirections) {
+                  if (selectedPerson) {
+                    setDestPersonId(selectedPerson.id);
+                  } else if (data?.length > 0) {
+                    setDestPersonId(data[0].id);
+                  }
+                  
+                  const other = (data || []).find(p => p.id !== (selectedPerson?.id || (data?.[0]?.id)));
+                  if (other) {
+                    setStartPersonId(other.id);
+                  }
+                }
+              }}
+              title="Chỉ Đường"
+              className={`px-3 h-9 rounded-lg transition-all flex flex-row items-center justify-center gap-1.5 cursor-pointer ${showDirections ? 'bg-red-800 text-amber-200 shadow-inner' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'}`}
+            >
+              <Navigation className={`w-4 h-4 ${showDirections ? '' : 'text-red-800'} rotate-45`} />
+              <span className="text-[10px] font-bold uppercase leading-tight">Chỉ đường</span>
+            </button>
+          </div>
+
+          {/* Interactive Directions / Routing Panel Overlay */}
+
+          {showDirections && (
+            <div className="absolute top-16 md:top-16 left-4 right-4 md:right-auto md:w-85 max-h-[82%] bg-white/95 backdrop-blur-md rounded-xl shadow-2xl border border-slate-200 z-30 overflow-hidden flex flex-col animate-scale-up">
+              {/* Panel Header */}
+              <div className="bg-gradient-to-r from-red-950 to-red-900 p-3.5 text-white flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-2">
+                  <Navigation className="w-4.5 h-4.5 text-amber-400 rotate-45 animate-pulse" />
+                  <h3 className="font-bold font-display uppercase text-xs md:text-sm text-amber-200 tracking-wider">
+                    Chỉ Đường Địa Lý
+                  </h3>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowDirections(false);
+                    clearRouteLine();
+                  }}
+                  className="p-1 rounded bg-red-800/40 text-red-200 hover:text-white hover:bg-red-800 transition-all cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Panel Inputs and Output Scroll Box */}
+              <div className="p-4 space-y-4 overflow-y-auto flex-1 text-slate-700">
+                
+                {/* 1. START POINT SELECTION */}
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block">
+                    ĐIỂM XUẤT PHÁT
+                  </label>
+                  
+                  {/* Selector Tabs */}
+                  <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200/50">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setStartType('gps');
+                        clearRouteLine();
+                      }}
+                      className={`flex-1 py-1.5 text-[10px] font-bold uppercase rounded-md transition-all cursor-pointer ${startType === 'gps' ? 'bg-white text-slate-800 shadow' : 'text-slate-500 hover:text-slate-700'}`}
+                    >
+                      Định vị GPS
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setStartType('person');
+                        clearRouteLine();
+                        if (data?.length > 0 && !startPersonId) {
+                          setStartPersonId(data[0].id);
+                        }
+                      }}
+                      className={`flex-1 py-1.5 text-[10px] font-bold uppercase rounded-md transition-all cursor-pointer ${startType === 'person' ? 'bg-white text-slate-800 shadow' : 'text-slate-500 hover:text-slate-700'}`}
+                    >
+                      Người có công
+                    </button>
+                  </div>
+
+                  {/* Input form depending on choice */}
+                  {startType === 'gps' ? (
+                    <div className="space-y-2 pt-1">
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={detectGPSLocation}
+                          disabled={gpsLoading}
+                          className="flex-1 flex items-center justify-center gap-1.5 bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-700 text-xs font-bold py-2 px-3 rounded-lg transition-all cursor-pointer"
+                        >
+                          {gpsLoading ? (
+                            <>
+                              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                              <span>Đang định vị...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Locate className="w-3.5 h-3.5 text-blue-600" />
+                              <span>Lấy Vị Trí Hiện Tại</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                      {gpsCoords ? (
+                        <div className="text-[10px] text-emerald-600 font-semibold bg-emerald-50 border border-emerald-200 rounded p-1.5 flex items-center gap-1.5 animate-fade-in">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
+                          Đã ghi nhận tọa độ GPS của bạn thành công!
+                        </div>
+                      ) : (
+                        <p className="text-[9px] text-slate-400 italic">
+                          Hệ thống sẽ lấy vị trí thực tế của thiết bị thông qua trình duyệt web.
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="pt-1">
+                      <select
+                        value={startPersonId}
+                        onChange={(e) => {
+                          setStartPersonId(e.target.value);
+                          clearRouteLine();
+                        }}
+                        className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-2 focus:ring-red-800 transition-all"
+                      >
+                        {data.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.hoTen} ({p.dienChinhSach})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
+
+                {/* Arrow indicator */}
+                <div className="flex justify-center -my-1">
+                  <div className="p-1 bg-slate-50 rounded-full border border-slate-200 text-slate-400">
+                    <ArrowLeftRight className="w-3.5 h-3.5 rotate-90" />
+                  </div>
+                </div>
+
+                {/* 2. DESTINATION SELECTION */}
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block">
+                    ĐIỂM ĐẾN (NGƯỜI CÓ CÔNG)
+                  </label>
+                  <select
+                    value={destPersonId}
+                    onChange={(e) => {
+                      setDestPersonId(e.target.value);
+                      clearRouteLine();
+                    }}
+                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-2 focus:ring-red-800 transition-all"
+                  >
+                    <option value="" disabled>--- Chọn người có công ---</option>
+                    {data.map((p) => (
+                      <option key={p.id} value={p.id} disabled={startType === 'person' && p.id === startPersonId}>
+                        {p.hoTen} ({p.dienChinhSach})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* 3. SUBMIT & ACTIONS */}
+                <div className="flex gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={clearRouteLine}
+                    className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold py-2.5 px-3 rounded-lg transition-all cursor-pointer"
+                  >
+                    Xóa đường
+                  </button>
+                  <button
+                    type="button"
+                    onClick={drawRouteLine}
+                    className="flex-1 bg-[#D4AF37] hover:bg-amber-500 text-red-950 text-xs font-bold py-2.5 px-3 rounded-lg border border-yellow-300 shadow transition-all flex items-center justify-center gap-1 cursor-pointer"
+                  >
+                    <Navigation className="w-3.5 h-3.5 rotate-45" />
+                    Vẽ Chỉ Hướng
+                  </button>
+                </div>
+
+                {/* 4. DETAILS DIRECTIONS RESULTS */}
+                {directionInstructions?.length > 0 && (
+                  <div className="border-t border-slate-100 pt-4 space-y-3 animate-fade-in">
+                    <div className="p-3 bg-red-50/60 rounded-xl border border-red-100/70 space-y-1">
+                      <div className="text-[9px] font-extrabold text-red-800 uppercase tracking-wider">KHOẢNG CÁCH THỰC ĐỊA</div>
+                      <div className="text-base font-extrabold text-red-950">
+                        {calculatedDistance && calculatedDistance < 1 
+                          ? `${Math.round(calculatedDistance * 1000)} Mét` 
+                          : `${calculatedDistance?.toFixed(2)} Kilômét`}
+                      </div>
+                      <p className="text-[10px] text-slate-400">
+                        Tính toán theo đường chim bay từ tọa độ xuất phát tới đích đến.
+                      </p>
+                    </div>
+
+                    {/* Step instructions list */}
+                    <div className="space-y-1.5 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                        TÓM TẮT DI CHUYỂN:
+                      </p>
+                      <ul className="space-y-1.5 text-[11px] leading-relaxed text-slate-600">
+                        {directionInstructions.map((inst, index) => (
+                          <li key={index} className="flex gap-1.5 items-start">
+                            <span className="text-red-800 font-bold shrink-0">•</span>
+                            <span>{inst}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    {/* Launch external turn-by-turn road driving directions */}
+                    <button 
+                      onClick={() => {
+                        const origin = startType === 'gps' 
+                          ? (gpsCoords ? `${gpsCoords[0]},${gpsCoords[1]}` : '') 
+                          : (data.find(p => p.id === startPersonId)?.lat + ',' + data.find(p => p.id === startPersonId)?.lng);
+                        const dest = data.find(p => p.id === destPersonId)?.lat + ',' + data.find(p => p.id === destPersonId)?.lng;
+                        setGoogleMapsEmbedUrl(`https://maps.google.com/maps?saddr=${origin}&daddr=${dest}&output=embed`);
+                      }}
+                      className="w-full flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold py-2.5 px-3 rounded-lg shadow transition-all cursor-pointer"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Chỉ Đường (Google Maps)</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* DETAILED PERSON INFOMATION MODAL SHEET */}
+          {selectedPerson && (
+            <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm z-[2000] flex items-center justify-center p-4 overflow-y-auto animate-fade-in">
+              
+              <div className="bg-white rounded-xl shadow-2xl border-t-4 border-red-800 w-full max-w-2xl overflow-hidden max-h-[90vh] flex flex-col animate-scale-up">
+                
+                {/* Modal Header */}
+                <div className="bg-gradient-to-r from-red-950 to-red-900 p-4 text-white flex items-center justify-between shrink-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-amber-400">★</span>
+                    <h2 className="font-bold font-display tracking-wide uppercase text-sm md:text-base text-amber-200">
+                      Hồ Sơ Chi Tiết Người Có Công
+                    </h2>
+                  </div>
+                  <button 
+                    onClick={() => setSelectedPerson(null)}
+                    className="p-1.5 rounded-lg bg-red-800/40 text-red-200 hover:text-white hover:bg-red-800 transition-all cursor-pointer"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                {/* Modal Scrollable Content */}
+                <div className="p-4 md:p-6 space-y-6 overflow-y-auto">
+                  
+                  {/* PART 1: PERSONAL INFOMATION */}
+                  <div className="flex flex-col sm:flex-row gap-5 items-start">
+                    
+                    {/* Portrait Frame */}
+                    <div className="w-full sm:w-36 h-44 rounded-xl overflow-hidden border-2 border-red-800/30 shadow-md bg-slate-100 shrink-0 relative flex items-center justify-center">
+                      <img 
+                        src={selectedPerson.hinhAnh || DEFAULT_PORTRAIT_URL} 
+                        alt={selectedPerson.hoTen}
+                        referrerPolicy="no-referrer"
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          (e.currentTarget as HTMLImageElement).src = DEFAULT_PORTRAIT_URL;
+                        }}
+                      />
+                      <div className="absolute bottom-0 left-0 right-0 bg-red-950/80 text-amber-200 text-center text-[10px] py-1 font-semibold border-t border-amber-500/30 uppercase tracking-widest">
+                        ẢNH CHÂN DUNG
+                      </div>
+                    </div>
+
+                    {/* Bio Specs */}
+                    <div className="flex-1 space-y-3 w-full">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="text-xl md:text-2xl font-extrabold text-red-950 leading-none">
+                          {selectedPerson.hoTen}
+                        </h3>
+                        <span className={`
+                          px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide border
+                          ${selectedPerson.tinhTrang === 'Đã mất (Đã chết)' ? 'bg-slate-100 text-slate-700 border-slate-300' :
+                            selectedPerson.tinhTrang === 'Đang công tác' ? 'bg-amber-100 text-amber-800 border-amber-200' :
+                            'bg-red-50 text-red-700 border-red-200'}
+                        `}>
+                          {selectedPerson.tinhTrang}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 text-xs md:text-sm">
+                        <div className="flex items-center gap-1.5 text-slate-600">
+                          <Calendar className="w-4 h-4 text-red-800 shrink-0" />
+                          <span><strong className="text-slate-800">Năm sinh:</strong> {selectedPerson.namSinh}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 text-slate-600">
+                          <MapPin className="w-4 h-4 text-red-800 shrink-0" />
+                          <span className="truncate" title={selectedPerson.diaChi}><strong className="text-slate-800">Địa phương:</strong> Xã Hàm Yên</span>
+                        </div>
+                      </div>
+
+                      <div className="p-3 bg-red-50/60 rounded-xl border border-red-100/70 space-y-1">
+                        <div className="text-[10px] font-extrabold text-red-800 uppercase tracking-wider">DIỆN CHÍNH SÁCH THỤ HƯỞNG</div>
+                        <div className="text-sm font-bold text-red-950">{selectedPerson.dienChinhSach}</div>
+                      </div>
+
+                      {/* Biography and achievements */}
+                      <div className="space-y-1.5">
+                        <div className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1">
+                          <Award className="w-4 h-4 text-amber-500" /> TIỂU SỬ & THÀNH TÍCH VẺ VANG
+                        </div>
+                        <p className="text-xs md:text-sm text-slate-600 leading-relaxed bg-slate-50 p-3 rounded-lg border border-slate-200/60 italic font-medium">
+                          &ldquo;{selectedPerson.tieuSuThanhTich}&rdquo;
+                        </p>
+                      </div>
+
+                    </div>
+                  </div>
+
+                  {/* PART 2: FAMILY INFOMATION */}
+                  <div className="border-t border-slate-200 pt-4 space-y-2">
+                    <div className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
+                      <Users className="w-4 h-4 text-red-800" /> THÔNG TIN GIA ĐÌNH & PHƯƠNG ÁN LIÊN HỆ THĂM HỎI
+                    </div>
+                    <div className="bg-slate-50 rounded-xl p-4 border border-slate-200/80 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                      <div className="text-xs md:text-sm text-slate-700 flex-1 space-y-1">
+                        <p className="font-semibold text-red-950 flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-red-800" /> 
+                          {selectedPerson.thongTinGiaDinh}
+                        </p>
+                        <p className="text-xs text-slate-400">
+                          Thông tin liên hệ này được ghi nhận nhằm hỗ trợ chính sách an sinh, thăm hỏi dịp lễ Tết hàng năm.
+                        </p>
+                      </div>
+                      
+                      {/* Extract phone numbers if exists */}
+                      {selectedPerson.thongTinGiaDinh.match(/\d[\d.\s]{8,12}/) && (
+                        <a 
+                          href={`tel:${selectedPerson.thongTinGiaDinh.match(/\d[\d.\s]{8,12}/)?.[0].replace(/[\s.]/g, '')}`}
+                          className="flex items-center gap-1.5 bg-red-800 hover:bg-red-950 text-amber-100 text-xs font-bold py-2 px-3 rounded-lg shadow border border-red-700 transition-all shrink-0 cursor-pointer"
+                        >
+                          <Phone className="w-3.5 h-3.5" />
+                          <span>Gọi Liên Hệ</span>
+                        </a>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* PART 3: GEOGRAPHICAL ADDRESS & NAVIGATION */}
+                  <div className="border-t border-slate-200 pt-4 space-y-3">
+                    <div className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
+                      <Navigation className="w-4 h-4 text-red-800" /> ĐỊA CHỈ & DẪN ĐƯỜNG ĐỊA LÝ
+                    </div>
+                    
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200/80 text-xs md:text-sm text-slate-700">
+                      <div className="space-y-1">
+                        <p><strong className="text-slate-800">Địa chỉ thường trú:</strong> {selectedPerson.diaChi}</p>
+                        <p className="font-mono text-slate-400 text-[11px]">
+                          Tọa độ GPS: Lat {selectedPerson.lat.toFixed(6)}, Lng {selectedPerson.lng.toFixed(6)}
+                        </p>
+                      </div>
+
+                      <button 
+                        onClick={() => setGoogleMapsEmbedUrl(`https://maps.google.com/maps?daddr=${selectedPerson.lat},${selectedPerson.lng}&output=embed`)}
+                        className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold py-2 px-4.5 rounded-lg shadow transition-all shrink-0 cursor-pointer"
+                      >
+                        <Navigation className="w-3.5 h-3.5 text-amber-400" />
+                        <span>Chỉ Đường (Google Maps)</span>
+                      </button>
+                    </div>
+                  </div>
+
+                </div>
+
+                {/* Modal Footer */}
+                <div className="bg-slate-100 px-6 py-3 border-t border-slate-200 flex justify-end shrink-0">
+                  <button 
+                    onClick={() => setSelectedPerson(null)}
+                    className="bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold py-2 px-4 rounded-lg transition-all cursor-pointer"
+                  >
+                    Đóng cửa sổ
+                  </button>
+                </div>
+
+              </div>
+
+            </div>
+          )}
+
+        </div>
+
+      </div>
+
+      {/* SYNC DATABASE FROM GOOGLE SHEETS / EXCEL MODAL */}
+      {showSyncModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[2500] flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-xl shadow-2xl border-t-4 border-[#D4AF37] w-full max-w-lg overflow-hidden animate-scale-up">
+            
+            <div className="bg-gradient-to-r from-red-950 to-red-900 p-4 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <FileSpreadsheet className="w-5 h-5 text-amber-400" />
+                <h3 className="font-bold font-display uppercase text-sm md:text-base text-amber-200">
+                  Cập Nhật & Đồng Bộ Dữ Liệu
+                </h3>
+              </div>
+              <button 
+                onClick={() => setShowSyncModal(false)}
+                className="text-red-200 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Tab Selection */}
+            <div className="flex border-b border-slate-200 bg-slate-50">
+              <button
+                type="button"
+                onClick={() => setActiveSyncTab('sheets')}
+                className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider border-b-2 transition-all flex items-center justify-center gap-2 ${
+                  activeSyncTab === 'sheets' 
+                    ? 'border-red-800 text-red-800 bg-white font-extrabold' 
+                    : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-100 font-bold'
+                }`}
+              >
+                <FileSpreadsheet className="w-4 h-4 text-[#D4AF37]" />
+                Google Sheets (Mây)
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveSyncTab('local')}
+                className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider border-b-2 transition-all flex items-center justify-center gap-2 ${
+                  activeSyncTab === 'local' 
+                    ? 'border-red-800 text-red-800 bg-white font-extrabold' 
+                    : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-100 font-bold'
+                }`}
+              >
+                <Upload className="w-4 h-4 text-[#D4AF37]" />
+                Tải Excel / CSV
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              {activeSyncTab === 'sheets' ? (
+                <form 
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    handleSync(sheetUrl);
+                  }} 
+                  className="space-y-4"
+                >
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">
+                      Liên kết CSV của Google Sheets
+                    </label>
+                    <input
+                      type="url"
+                      required
+                      placeholder="https://docs.google.com/spreadsheets/d/e/.../pub?output=csv"
+                      value={sheetUrl}
+                      onChange={(e) => setSheetUrl(e.target.value)}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-red-800 transition-all"
+                    />
+                    <p className="text-[10px] text-slate-400 leading-relaxed">
+                      Dán đường dẫn xuất bản CSV từ Google Sheets của bạn. Bản đồ và danh sách tìm kiếm sẽ tự động đồng bộ theo nội dung trang tính trực tuyến.
+                    </p>
+                  </div>
+
+                  {/* Guide prompt */}
+                  <div className="bg-amber-50 rounded-lg p-3 border border-amber-100 flex gap-2.5">
+                    <Info className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <div className="text-[10px] text-amber-800 leading-relaxed space-y-1">
+                      <p className="font-bold uppercase tracking-wider text-[9px]">LƯU Ý CẤU TRÚC TRANG TÍNH:</p>
+                      <p>Tệp Google Sheets hoặc Excel cần có tiêu đề các cột tiếng Việt chính xác như: <strong>Họ tên</strong>, <strong>Năm sinh</strong>, <strong>Diện chính sách</strong>, <strong>Tình trạng</strong>, <strong>Địa chỉ</strong>, <strong>Tọa độ Lat</strong>, <strong>Tọa độ Lng</strong>, <strong>Thông tin gia đình</strong>, <strong>Tiểu sử và Thành tích</strong>, <strong>Hình ảnh</strong>.</p>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-between items-center pt-3 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowSyncModal(false);
+                        setShowGuideModal(true);
+                      }}
+                      className="text-[11px] text-red-800 font-bold hover:underline"
+                    >
+                      Xem hướng dẫn kết nối ➔
+                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowSyncModal(false)}
+                        className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold py-2 px-4 rounded-lg transition-all"
+                      >
+                        Hủy
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={isLoading}
+                        className="bg-[#D4AF37] hover:bg-amber-500 text-red-950 text-xs font-bold py-2 px-4 rounded-lg shadow border border-yellow-300 transition-all flex items-center gap-1.5"
+                      >
+                        {isLoading ? (
+                          <>
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                            <span>Đang tải...</span>
+                          </>
+                        ) : (
+                          <>
+                            <RefreshCw className="w-3.5 h-3.5" />
+                            <span>Đồng bộ ngay</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </form>
+              ) : (
+                <div className="space-y-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">
+                      Chọn tệp dữ liệu từ máy tính của bạn
+                    </label>
+                    <div className="border-2 border-dashed border-slate-200 hover:border-red-800/60 rounded-xl p-6 transition-all text-center bg-slate-50 relative group">
+                      <input
+                        type="file"
+                        accept=".xlsx, .xls, .csv"
+                        onChange={handleExcelUpload}
+                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                      />
+                      <div className="flex flex-col items-center justify-center space-y-2">
+                        <div className="p-3 bg-red-50 rounded-full text-red-800 group-hover:scale-110 transition-all duration-300">
+                          <Upload className="w-6 h-6" />
+                        </div>
+                        <div className="text-xs text-slate-700 font-semibold">
+                          Kéo thả hoặc Click để tải tệp lên
+                        </div>
+                        <div className="text-[10px] text-slate-400">
+                          Hỗ trợ định dạng Excel (.xlsx, .xls) hoặc tệp văn bản (.csv)
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-amber-50 rounded-lg p-3 border border-amber-100 flex gap-2.5">
+                    <Info className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <div className="text-[10px] text-amber-800 leading-relaxed space-y-1">
+                      <p className="font-bold uppercase tracking-wider text-[9px]">LƯU Ý CẤU TRÚC TỆP:</p>
+                      <p>Dòng đầu tiên của tệp Excel/CSV bắt buộc phải chứa các tiêu đề cột tiếng Việt: <strong>Họ tên</strong>, <strong>Năm sinh</strong>, <strong>Diện chính sách</strong>, <strong>Tình trạng</strong>, <strong>Địa chỉ</strong>, <strong>Tọa độ Lat</strong>, <strong>Tọa độ Lng</strong>, <strong>Thông tin gia đình</strong>, <strong>Tiểu sử và Thành tích</strong>, <strong>Hình ảnh</strong>.</p>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end pt-3 border-t border-slate-100 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowSyncModal(false)}
+                      className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold py-2 px-4 rounded-lg transition-all"
+                    >
+                      Đóng
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      
+      {/* RESET MODAL */}
+      {showResetModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[2500] flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl border-t-4 border-red-800 w-full max-w-md overflow-hidden animate-scale-up">
+            <div className="bg-gradient-to-r from-red-950 to-red-900 p-4 text-white flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <RefreshCw className="w-5 h-5 text-amber-400" />
+                <h3 className="font-bold font-display uppercase text-sm md:text-base text-amber-200">
+                  Khôi Phục Dữ Liệu
+                </h3>
+              </div>
+              <button 
+                onClick={() => setShowResetModal(false)}
+                className="text-red-200 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-5">
+              <p className="text-xs text-slate-600 font-medium leading-relaxed">
+                Bạn có thể khôi phục toàn bộ dữ liệu về trạng thái mẫu ban đầu, hoặc chỉ khôi phục các dữ liệu nằm trong một khoảng thời gian cụ thể (những khoảng thời gian khác sẽ được giữ nguyên).
+              </p>
+
+              <div className="space-y-3">
+                <label className="flex items-center gap-2 p-3 border rounded-lg cursor-pointer hover:bg-slate-50 transition-colors">
+                  <input 
+                    type="radio" 
+                    name="resetMode" 
+                    checked={resetMode === 'all'} 
+                    onChange={() => setResetMode('all')}
+                    className="text-red-800 focus:ring-red-800 w-4 h-4"
+                  />
+                  <div>
+                    <div className="font-bold text-sm text-slate-800">Khôi phục toàn bộ</div>
+                    <div className="text-[11px] text-slate-500">Xóa toàn bộ dữ liệu hiện tại và tải lại dữ liệu mẫu.</div>
+                  </div>
+                </label>
+
+                <label className="flex items-center gap-2 p-3 border rounded-lg cursor-pointer hover:bg-slate-50 transition-colors">
+                  <input 
+                    type="radio" 
+                    name="resetMode" 
+                    checked={resetMode === 'range'} 
+                    onChange={() => setResetMode('range')}
+                    className="text-red-800 focus:ring-red-800 w-4 h-4"
+                  />
+                  <div>
+                    <div className="font-bold text-sm text-slate-800">Khôi phục theo thời gian</div>
+                    <div className="text-[11px] text-slate-500">Chỉ khôi phục dữ liệu gốc trong khoảng thời gian đã chọn.</div>
+                  </div>
+                </label>
+              </div>
+
+              {resetMode === 'range' && (
+                <div className="grid grid-cols-2 gap-3 p-3 bg-slate-50 rounded-lg border border-slate-200">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">Từ ngày</label>
+                    <input 
+                      type="date" 
+                      value={resetFromDate}
+                      onChange={(e) => setResetFromDate(e.target.value)}
+                      className="w-full text-xs p-1.5 border border-slate-300 rounded focus:outline-none focus:border-red-800"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">Đến ngày</label>
+                    <input 
+                      type="date" 
+                      value={resetToDate}
+                      onChange={(e) => setResetToDate(e.target.value)}
+                      className="w-full text-xs p-1.5 border border-slate-300 rounded focus:outline-none focus:border-red-800"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button 
+                  onClick={() => setShowResetModal(false)}
+                  className="px-4 py-2 text-xs font-bold text-slate-600 bg-slate-200 hover:bg-slate-300 rounded-lg transition-colors"
+                >
+                  Hủy
+                </button>
+                <button 
+                  onClick={executeResetData}
+                  disabled={resetMode === 'range' && !resetFromDate && !resetToDate}
+                  className="px-4 py-2 text-xs font-bold text-amber-100 bg-red-800 hover:bg-red-900 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" /> Xác Nhận Khôi Phục
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* HELP / GUIDE MODAL */}
+      
+      {/* Google Maps Embed Modal */}
+      {googleMapsEmbedUrl && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/70 p-4 sm:p-8 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl h-[85vh] flex flex-col overflow-hidden relative">
+            <div className="bg-slate-800 text-white px-4 py-3 flex justify-between items-center shrink-0">
+              <h3 className="font-bold flex items-center gap-2 text-sm uppercase tracking-wider">
+                <Navigation className="w-4 h-4 text-amber-400" /> Bản đồ Google Maps
+              </h3>
+              <button 
+                onClick={() => setGoogleMapsEmbedUrl(null)}
+                className="p-1.5 bg-slate-700 hover:bg-red-600 rounded-md transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="flex-1 w-full h-full bg-slate-100">
+              <iframe 
+                src={googleMapsEmbedUrl} 
+                className="w-full h-full border-0" 
+                allowFullScreen 
+                loading="lazy" 
+                referrerPolicy="no-referrer-when-downgrade"
+              ></iframe>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showGuideModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[2500] flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-xl shadow-2xl border-t-4 border-red-800 w-full max-w-lg overflow-hidden animate-scale-up">
+            
+            <div className="bg-gradient-to-r from-red-950 to-red-900 p-4 text-white flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <HelpCircle className="w-5 h-5 text-amber-400" />
+                <h3 className="font-bold font-display uppercase text-sm md:text-base text-amber-200">
+                  Hướng Dẫn Kết Nối Google Sheets
+                </h3>
+              </div>
+              <button 
+                onClick={() => setShowGuideModal(false)}
+                className="text-red-200 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto text-xs text-slate-600 leading-relaxed">
+              
+              <div className="space-y-2">
+                <p className="font-bold text-red-950 text-sm">Các Bước Lấy Link CSV Để Đồng Bộ Bản Đồ:</p>
+                <ol className="list-decimal list-inside space-y-2 pl-1 bg-slate-50 p-3 rounded-lg border border-slate-200">
+                  <li>Mở tệp Google Sheets chứa thông tin danh sách của bạn lên.</li>
+                  <li>Click vào menu <strong className="text-slate-800">Tệp (File)</strong> ở góc trên bên trái.</li>
+                  <li>Chọn <strong className="text-slate-800">Chia sẻ (Share)</strong> ➔ <strong className="text-slate-800">Xuất bản lên web (Publish to web)</strong>.</li>
+                  <li>Tại bảng hiện ra, chuyển ô chọn đầu tiên thành <strong className="text-red-800 font-bold">Giá trị phân tách bằng dấu phẩy (.csv)</strong>.</li>
+                  <li>Click vào nút <strong className="text-slate-800">Xuất bản (Publish)</strong> màu xanh và chọn Xác nhận.</li>
+                  <li>Sao chép đường liên kết (URL) được sinh ra và dán vào ô đồng bộ của ứng dụng.</li>
+                </ol>
+              </div>
+
+              <div className="space-y-2">
+                <p className="font-bold text-red-950 text-sm">Cấu Trúc Các Cột Yêu Cầu (Chính Xác):</p>
+                <p>Google Sheets cần có tiêu đề các cột chuẩn tiếng Việt sau để ứng dụng phân loại tự động:</p>
+                <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5 font-mono text-[10px] text-slate-700 grid grid-cols-2 gap-y-1 gap-x-2">
+                  <div>1. <strong>Họ tên</strong></div>
+                  <div>6. <strong>Tọa độ Lat</strong> (vĩ độ v.d: 21.9863)</div>
+                  <div>2. <strong>Năm sinh</strong></div>
+                  <div>7. <strong>Tọa độ Lng</strong> (kinh độ v.d: 105.0863)</div>
+                  <div>3. <strong>Diện chính sách</strong></div>
+                  <div>8. <strong>Thông tin gia đình</strong></div>
+                  <div>4. <strong>Tình trạng</strong> (Còn sống/Đã mất (Đã chết))</div>
+                  <div>9. <strong>Tiểu sử và Thành tích</strong></div>
+                  <div>5. <strong>Địa chỉ</strong></div>
+                  <div>10. <strong>Hình ảnh</strong> (URL ảnh chân dung)</div>
+                </div>
+              </div>
+                            
+              <div className="space-y-2">
+                <p className="font-bold text-red-950 text-sm">Chú Thích Bản Đồ:</p>
+                <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="relative flex h-3 w-3"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-red-600 ring-2 ring-red-200"></span></span>
+                    <span className="font-medium text-gray-700 text-[11px]">Còn sống (Đỏ)</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="relative flex h-3 w-3"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500 ring-2 ring-amber-200"></span></span>
+                    <span className="font-medium text-gray-700 text-[11px]">Đang công tác (Vàng)</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="relative flex h-3 w-3"><span className="relative inline-flex rounded-full h-3 w-3 bg-slate-500 ring-2 ring-slate-200"></span></span>
+                    <span className="font-medium text-gray-700 text-[11px]">Đã mất (Xám)</span>
+                  </div>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <p className="font-bold text-red-950 text-sm">Hướng dẫn tải hình ảnh từ file Excel:</p>
+                <div className="bg-amber-50 p-3 rounded-lg border border-amber-200 text-amber-900">
+                  <p className="mb-2">Vì ứng dụng hiện tại chạy trên nền web tĩnh và đồng bộ qua Google Sheets / Excel, bạn không thể tải trực tiếp file ảnh vào Excel. Thay vào đó, bạn làm theo cách sau:</p>
+                  <ol className="list-decimal list-inside space-y-1 pl-1">
+                    <li>Trong file Excel/Google Sheets của bạn, hãy chắc chắn có một cột tên là <strong>"Hình ảnh"</strong>.</li>
+                    <li>Sử dụng link (URL) ảnh trực tiếp: Tải hình ảnh của người có công lên các dịch vụ lưu trữ (ví dụ: Google Drive, Imgur, Postimages, Facebook...).</li>
+                    <li>Sao chép link ảnh trực tiếp (thường có đuôi .jpg hoặc .png) và dán vào cột <strong>"Hình ảnh"</strong> tương ứng với người đó.</li>
+                    <li>Khi bạn đồng bộ file vào ứng dụng, hệ thống sẽ tự động đọc link URL này và tải hình ảnh lên cả Bản đồ và Avatar chi tiết.</li>
+                  </ol>
+                  <p className="mt-2 text-[10px] italic">Bạn có thể tải lại trang ứng dụng để kiểm tra các thay đổi nhé! Hãy cho tôi biết nếu bạn cần hỗ trợ thêm về cách lấy link ảnh trực tiếp từ Google Drive.</p>
+                </div>
+              </div>
+              <div className="flex justify-end pt-3 border-t border-slate-100">
+                <button
+                  onClick={() => {
+                    setShowGuideModal(false);
+                    setShowSyncModal(true);
+                  }}
+                  className="bg-red-900 hover:bg-red-950 text-amber-100 text-xs font-bold py-2 px-4 rounded-lg shadow border border-red-800 transition-all cursor-pointer"
+                >
+                  Mở Bảng Đồng Bộ Ngay
+                </button>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+}

@@ -1,0 +1,121 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+@import "leaflet/dist/leaflet.css";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Space Grotesk", sans-serif;
+}
+
+/* Custom leaflet style overrides for a cleaner map appearance */
+.leaflet-popup-content-wrapper {
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  padding: 0;
+  overflow: hidden;
+}
+
+.leaflet-popup-content {
+  margin: 0 !important;
+  line-height: 1.5;
+}
+
+.leaflet-popup-close-button {
+  color: #666 !important;
+  padding: 8px !important;
+}
+
+/* Custom pulse animations for live markers */
+@keyframes pulse-ring {
+  0% {
+    transform: scale(0.33);
+  }
+  80%, 100% {
+    opacity: 0;
+  }
+}
+
+@keyframes pulse-dot {
+  0% {
+    transform: scale(0.8);
+  }
+  50% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.8);
+  }
+}
+
+
+
+
+.marker-pulse-emerald {
+  position: relative;
+}
+.marker-pulse-emerald::before {
+  content: '';
+  position: absolute;
+  top: -6px;
+  left: -6px;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background-color: #10b981;
+  opacity: 0.6;
+  animation: pulse-ring 1.5s cubic-bezier(0.215, 0.610, 0.355, 1) infinite;
+  z-index: -1;
+}
+
+.marker-pulse-amber {
+  position: relative;
+}
+.marker-pulse-amber::before {
+  content: '';
+  position: absolute;
+  top: -6px;
+  left: -6px;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background-color: #f59e0b;
+  opacity: 0.6;
+  animation: pulse-ring 1.5s cubic-bezier(0.215, 0.610, 0.355, 1) infinite;
+  z-index: -1;
+}
+
+
+.marker-pulse-red {
+  position: relative;
+}
+.marker-pulse-red::before {
+  content: '';
+  position: absolute;
+  top: -6px;
+  left: -6px;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background-color: #ef4444;
+  opacity: 0.6;
+  animation: pulse-ring 1.5s cubic-bezier(0.215, 0.610, 0.355, 1) infinite;
+  z-index: -1;
+}
+
+.marker-pulse-slate {
+  position: relative;
+}
+.marker-pulse-slate::before {
+  content: '';
+  position: absolute;
+  top: -6px;
+  left: -6px;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background-color: #64748b;
+  opacity: 0.6;
+  animation: pulse-ring 1.5s cubic-bezier(0.215, 0.610, 0.355, 1) infinite;
+  z-index: -1;
+}

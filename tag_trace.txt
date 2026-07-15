@@ -1,0 +1,70 @@
+Line  730: +0 -1  | </div>
+Line  734: +1 -0  | <div className="flex flex-1 relative overflow-hidden">
+Line  742: +1 -0  | <div className="flex border-b border-slate-200 bg-slate-50 shrink-0">
+Line  755: +0 -1  | </div>
+Line  759: +1 -0  | <div className="flex-1 overflow-y-auto flex flex-col relative">
+Line  761: +1 -0  | <div className="p-4 space-y-4">
+Line  762: +1 -0  | <div className="flex items-center justify-between mb-3">
+Line  774: +0 -1  | </div>
+Line  777: +1 -0  | <div className="space-y-2">
+Line  778: +1 -0  | <div className="grid grid-cols-2 gap-2">
+Line  779: +1 -0  | <div className="bg-white border border-slate-200 rounded-lg p-2.5 shadow-sm text-center">
+Line  782: +0 -1  | </div>
+Line  783: +1 -0  | <div className="bg-slate-100 border border-slate-200 rounded-lg p-2.5 shadow-sm text-center">
+Line  786: +0 -1  | </div>
+Line  787: +0 -1  | </div>
+Line  789: +1 -0  | <div className="bg-emerald-50/60 border border-emerald-100 rounded-lg p-2.5 shadow-sm">
+Line  790: +1 -0  | <div className="flex justify-between items-center border-b border-emerald-100/50 pb-1.5 mb-1.5">
+Line  796: +0 -1  | </div>
+Line  797: +1 -0  | <div className="grid grid-cols-2 gap-2 text-center">
+Line  798: +1 -0  | <div className="bg-white/80 rounded p-1.5 border border-emerald-100/20">
+Line  801: +0 -1  | </div>
+Line  802: +1 -0  | <div className="bg-white/80 rounded p-1.5 border border-emerald-100/20">
+Line  805: +0 -1  | </div>
+Line  806: +0 -1  | </div>
+Line  807: +0 -1  | </div>
+Line  808: +0 -1  | </div>
+Line  809: +0 -1  | </div>
+Line  815: +1 -0  | <div className="flex flex-col h-full absolute inset-0">
+Line  817: +1 -0  | <div className="p-4 border-b border-slate-100 bg-white space-y-3 shrink-0">
+Line  819: +1 -0  | <div className="relative">
+Line  836: +0 -1  | </div>
+Line  839: +1 -0  | <div className="grid grid-cols-2 gap-2">
+Line  840: +1 -0  | <div className="space-y-1">
+Line  842: +1 -0  | <div className="relative">
+Line  853: +0 -1  | </div>
+Line  854: +0 -1  | </div>
+Line  856: +1 -0  | <div className="space-y-1">
+Line  858: +1 -0  | <div className="relative">
+Line  869: +0 -1  | </div>
+Line  870: +0 -1  | </div>
+Line  872: +1 -0  | <div className="space-y-1">
+Line  874: +1 -0  | <div className="relative">
+Line  886: +0 -1  | </div>
+Line  887: +0 -1  | </div>
+Line  888: +0 -1  | </div>
+Line  892: +1 -0  | <div className="flex justify-between items-center text-[11px] text-red-800 bg-red-50 p-1.5 rounded-md border border-red-100">
+Line  905: +0 -1  | </div>
+Line  907: +0 -1  | </div>
+Line  910: +1 -0  | <div className="flex-1 overflow-y-auto bg-slate-50 p-3 space-y-2">
+Line  912: +1 -0  | <div className="py-12 px-4 text-center bg-white rounded-xl border border-slate-200">
+Line  916: +0 -1  | </div>
+Line  934: +1 -0  | <div
+Line  943: +1 -0  | <div className={`absolute left-0 top-0 bottom-0 w-1 ${indicatorColor}`} />
+Line  946: +1 -0  | <div className="w-12 h-12 rounded-lg bg-slate-100 overflow-hidden shrink-0 border border-slate-200 flex items-center justify-center relative">
+Line  957: +0 -1  | </div>
+Line  960: +1 -0  | <div className="flex-1 min-w-0 space-y-1">
+Line  961: +1 -0  | <div className="flex items-start justify-between gap-1">
+Line  968: +0 -1  | </div>
+Line  974: +1 -0  | <div className="flex flex-wrap items-center justify-between gap-1 pt-1 border-t border-slate-100/60">
+Line  982: +0 -1  | </div>
+Line  983: +0 -1  | </div>
+Line  984: +0 -1  | </div>
+Line  988: +0 -1  | </div>
+Line  990: +0 -1  | </div>
+Line  992: +0 -1  | </div>
+Line  994: +1 -0  | <div className="p-3 bg-red-950 text-center border-t border-red-800 shrink-0">
+Line  998: +0 -1  | </div>
+Line 1000: +0 -1  | </div>
+Line 1004: +1 -0  | <div className="flex-1 relative h-full w-full">
+Line 1007: +1 -0  | <div ref={mapContainerRef} className="w-full h-full z-10" />
