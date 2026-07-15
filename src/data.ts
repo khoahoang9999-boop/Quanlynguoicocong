@@ -112,6 +112,9 @@ export function parseCSVToNguoiCoCong(parsedRows: any[]): NguoiCoCong[] {
       let lat = 0;
       let lng = 0;
       let thongTinGiaDinh = '';
+      let hoTenThanNhan = '';
+      let sdtThanNhan = '';
+      let quanHeThanNhan = '';
       let tieuSuThanhTich = '';
       let hinhAnh = '';
       let namDuLieu = '';
@@ -136,6 +139,12 @@ export function parseCSVToNguoiCoCong(parsedRows: any[]): NguoiCoCong[] {
           lng = parseFloat(value) || 0;
         } else if (norm === 'thongtingiadinh' || norm === 'nguoithanthongtin' || norm === 'nguoichamsoc') {
           thongTinGiaDinh = value;
+        } else if (norm === 'hotenthannhan' || norm === 'tenthannhan' || norm === 'nguoithan' || norm === 'hotennguoithan') {
+          hoTenThanNhan = value;
+        } else if (norm === 'sdtthannhan' || norm === 'sodienthoaithannhan' || norm === 'sdtlienhe' || norm === 'sodtthannhan' || norm === 'sdt') {
+          sdtThanNhan = value;
+        } else if (norm === 'quanhe' || norm === 'moiquanhe' || norm === 'quanhevbinguoicocong' || norm === 'quanhevoinguoicocong' || norm === 'quanhethannhan') {
+          quanHeThanNhan = value;
         } else if (norm === 'tieusuvathanhtich' || norm === 'tieusu' || norm === 'thanhtich') {
           tieuSuThanhTich = value;
         } else if (norm === 'hinhanh' || norm === 'anh' || norm === 'anhchandung' || norm === 'urlanh') {
@@ -146,7 +155,6 @@ export function parseCSVToNguoiCoCong(parsedRows: any[]): NguoiCoCong[] {
       });
 
       // If key names don't match, try to map index based standard headers
-      // (1: Họ tên, 2: Năm sinh, 3: Diện chính sách, 4: Tình trạng, 5: Địa chỉ, 6: Lat, 7: Lng, 8: Gia đình, 9: Tiểu sử, 10: Hình ảnh)
       const values = Object.values(row);
       if (!hoTen && values[0]) hoTen = String(values[0]).trim();
       if (!namSinh && values[1]) namSinh = String(values[1]).trim();
@@ -155,10 +163,34 @@ export function parseCSVToNguoiCoCong(parsedRows: any[]): NguoiCoCong[] {
       if (!diaChi && values[4]) diaChi = String(values[4]).trim();
       if (!lat && values[5]) lat = parseFloat(String(values[5])) || 0;
       if (!lng && values[6]) lng = parseFloat(String(values[6])) || 0;
-      if (!thongTinGiaDinh && values[7]) thongTinGiaDinh = String(values[7]).trim();
-      if (!tieuSuThanhTich && values[8]) tieuSuThanhTich = String(values[8]).trim();
-      if (!hinhAnh && values[9]) hinhAnh = String(values[9]).trim();
-      if (values[10] && (!namDuLieu || namDuLieu === '')) namDuLieu = String(values[10]).trim();
+      
+      if (values[7]) {
+        if (values.length >= 12) {
+          if (!hoTenThanNhan) hoTenThanNhan = String(values[7]).trim();
+          if (!sdtThanNhan && values[8]) sdtThanNhan = String(values[8]).trim();
+          if (!quanHeThanNhan && values[9]) quanHeThanNhan = String(values[9]).trim();
+          if (!tieuSuThanhTich && values[10]) tieuSuThanhTich = String(values[10]).trim();
+          if (!hinhAnh && values[11]) hinhAnh = String(values[11]).trim();
+          if (values[12] && (!namDuLieu || namDuLieu === '')) namDuLieu = String(values[12]).trim();
+        } else {
+          if (!thongTinGiaDinh) thongTinGiaDinh = String(values[7]).trim();
+          if (!tieuSuThanhTich && values[8]) tieuSuThanhTich = String(values[8]).trim();
+          if (!hinhAnh && values[9]) hinhAnh = String(values[9]).trim();
+          if (values[10] && (!namDuLieu || namDuLieu === '')) namDuLieu = String(values[10]).trim();
+        }
+      }
+
+      // Combine separate columns if they were supplied
+      if (hoTenThanNhan) {
+        let comb = hoTenThanNhan;
+        if (sdtThanNhan) {
+          comb += ` (SĐT: ${sdtThanNhan})`;
+        }
+        if (quanHeThanNhan) {
+          comb += ` - Mối quan hệ: ${quanHeThanNhan}`;
+        }
+        thongTinGiaDinh = comb;
+      }
 
       if (!hoTen) return null;
       return {

@@ -432,7 +432,7 @@ export default function App() {
   // Helper to generate and download a perfectly structured and formatted Excel file template
   const downloadExcelTemplate = () => {
     try {
-      // Perfect column headers as expected by parseCSVToNguoiCoCong
+      // Perfect column headers as expected by parseCSVToNguoiCoCong with separate family columns
       const headers = [
         'Họ tên',
         'Năm sinh',
@@ -441,7 +441,9 @@ export default function App() {
         'Địa chỉ',
         'Tọa độ Lat',
         'Tọa độ Lng',
-        'Thông tin gia đình',
+        'Họ tên thân nhân',
+        'SĐT thân nhân',
+        'Quan hệ với người có công',
         'Tiểu sử và Thành tích',
         'Hình ảnh',
         'Năm dữ liệu'
@@ -457,7 +459,9 @@ export default function App() {
           'Địa chỉ': 'Thôn 1, xã Hàm Yên, huyện Hàm Yên, tỉnh Tuyên Quang',
           'Tọa độ Lat': 21.9863,
           'Tọa độ Lng': 105.0863,
-          'Thông tin gia đình': 'Con trai: Nguyễn Văn Hải (SĐT: 0912.345.678) - Mối quan hệ: Con ruột',
+          'Họ tên thân nhân': 'Nguyễn Văn Hải',
+          'SĐT thân nhân': '0912345678',
+          'Quan hệ với người có công': 'Con ruột',
           'Tiểu sử và Thành tích': 'Tham gia kháng chiến chống Mỹ cứu nước, chiến đấu tại chiến trường Quảng Trị năm 1972. Được trao tặng Huân chương Kháng chiến hạng Nhì, Huân chương Chiến sĩ vẻ vang.',
           'Hình ảnh': 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=150',
           'Năm dữ liệu': '2026'
@@ -470,7 +474,9 @@ export default function App() {
           'Địa chỉ': 'Thôn 3, xã Hàm Yên, huyện Hàm Yên, tỉnh Tuyên Quang',
           'Tọa độ Lat': 21.9885,
           'Tọa độ Lng': 105.0890,
-          'Thông tin gia đình': 'Cháu nội thờ cúng: Trần Văn Khang (SĐT: 0987.654.321) - Mối quan hệ: Cháu nội',
+          'Họ tên thân nhân': 'Trần Văn Khang',
+          'SĐT thân nhân': '0987654321',
+          'Quan hệ với người có công': 'Cháu nội',
           'Tiểu sử và Thành tích': 'Có chồng và hai con trai hy sinh trong kháng chiến chống Mỹ cứu nước. Được phong tặng danh hiệu cao quý "Bà mẹ Việt Nam Anh hùng" năm 1996.',
           'Hình ảnh': 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=150',
           'Năm dữ liệu': '2026'
@@ -483,7 +489,9 @@ export default function App() {
           'Địa chỉ': 'Thôn 2, xã Hàm Yên, huyện Hàm Yên, tỉnh Tuyên Quang',
           'Tọa độ Lat': 21.9840,
           'Tọa độ Lng': 105.0845,
-          'Thông tin gia đình': 'Vợ: Lê Thị Hoa (SĐT: 0905.123.456), chung sống tại địa phương',
+          'Họ tên thân nhân': 'Lê Thị Hoa',
+          'SĐT thân nhân': '0905123456',
+          'Quan hệ với người có công': 'Vợ',
           'Tiểu sử và Thành tích': 'Tham gia chiến đấu bảo vệ biên giới phía Bắc năm 1979. Là cựu chiến binh tích cực tham gia các phong trào xã hội tại địa phương.',
           'Hình ảnh': 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=150',
           'Năm dữ liệu': '2026'
@@ -502,7 +510,9 @@ export default function App() {
         { wch: 45 }, // Địa chỉ
         { wch: 14 }, // Tọa độ Lat
         { wch: 14 }, // Tọa độ Lng
-        { wch: 45 }, // Thông tin gia đình
+        { wch: 22 }, // Họ tên thân nhân
+        { wch: 16 }, // SĐT thân nhân
+        { wch: 24 }, // Quan hệ với người có công
         { wch: 65 }, // Tiểu sử và Thành tích
         { wch: 30 }, // Hình ảnh
         { wch: 12 }  // Năm dữ liệu
